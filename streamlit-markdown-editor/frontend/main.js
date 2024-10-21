@@ -1,103 +1,122 @@
-const pasteArea = document.getElementById('paste-area');
+let editor;
 const turndownService = new TurndownService({
     headingStyle: 'atx',
     codeBlockStyle: 'fenced',
     emDelimiter: '*',
-    strongDelimiter: '**'
+    strongDelimiter: '**',
+    bulletListMarker: '-',
+    linkStyle: 'inlined',
+    linkReferenceStyle: 'full'
 });
 
-// Custom rule to handle bold and italic
-turndownService.addRule('boldAndItalic', {
-    filter: ['strong', 'b', 'em', 'i'],
-    replacement: function (content, node, options) {
-        if (node.nodeName === 'STRONG' || node.nodeName === 'B') {
-            return node.parentNode.nodeName === 'EM' || node.parentNode.nodeName === 'I'
-                ? `***${content}***`  // Bold and italic
-                : `**${content}**`;   // Just bold
+function preprocessHtml(html) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    
+    doc.querySelectorAll('span').forEach(span => {
+        const style = span.getAttribute('style') || '';
+        if (style.includes('font-weight:700') || style.includes('font-weight:bold')) {
+            const strong = doc.createElement('strong');
+            strong.innerHTML = span.innerHTML;
+            span.parentNode.replaceChild(strong, span);
+        } else if (style.includes('font-style:italic')) {
+            const em = doc.createElement('em');
+            em.innerHTML = span.innerHTML;
+            span.parentNode.replaceChild(em, span);
         }
-        if (node.nodeName === 'EM' || node.nodeName === 'I') {
-            return node.parentNode.nodeName === 'STRONG' || node.parentNode.nodeName === 'B'
-                ? `***${content}***`  // Bold and italic
-                : `*${content}*`;     // Just italic
-        }
+    });
+
+    return doc.body.innerHTML;
+}
+
+// Custom rule for lists
+turndownService.addRule('lists', {
+    filter: ['ul', 'ol'],
+    replacement: function (content, node) {
+        const isOrdered = node.nodeName === 'OL';
+        const listItems = content.trim().split('\n');
+        return listItems.map((item, index) => {
+            const prefix = isOrdered ? `${index + 1}. ` : '- ';
+            return prefix + item.trim();
+        }).join('\n') + '\n\n';
     }
 });
 
-// Custom rule to handle inline styles for bold and italic
-turndownService.addRule('inlineStyles', {
-    filter: function (node, options) {
-        return (
-            node.nodeName === 'SPAN' &&
-            node.style &&
-            (node.style.fontWeight === 'bold' || node.style.fontWeight === '700' ||
-             node.style.fontStyle === 'italic')
-        );
-    },
+// Custom rule for list items
+turndownService.addRule('listItems', {
+    filter: 'li',
     replacement: function (content, node, options) {
-        const isBold = node.style.fontWeight === 'bold' || node.style.fontWeight === '700';
-        const isItalic = node.style.fontStyle === 'italic';
+        content = content.trim();
+        let prefix = '';
         
-        if (isBold && isItalic) {
-            return `***${content}***`;
-        } else if (isBold) {
-            return `**${content}**`;
-        } else if (isItalic) {
-            return `*${content}*`;
+        // Calculate the nesting level
+        let level = 0;
+        let parent = node.parentNode;
+        while (parent && (parent.nodeName === 'UL' || parent.nodeName === 'OL')) {
+            level++;
+            parent = parent.parentNode;
         }
-        return content;
+        
+        // Add indentation based on nesting level
+        prefix = '  '.repeat(level - 1);
+        
+        return prefix + content + '\n';
     }
 });
 
 function sendValue(value) {
+    console.log('Sending value to Streamlit:', value);
     Streamlit.setComponentValue(value);
 }
 
-function updateMarkdown() {
-    const html = pasteArea.innerHTML;
-    const markdown = turndownService.turndown(html);
-    console.log("Sending markdown:", markdown);
-    sendValue(markdown);
+function initializeEditor() {
+    console.log('Initializing editor');
+    tinymce.init({
+        selector: '#editor-container',
+        height: '100%',
+        menubar: false,
+        plugins: [
+            'advlist autolink lists link image charmap print preview anchor',
+            'searchreplace visualblocks code fullscreen',
+            'insertdatetime media table code help wordcount'
+        ],
+        toolbar: 'undo redo | formatselect | ' +
+            'bold italic backcolor | alignleft aligncenter ' +
+            'alignright alignjustify | bullist numlist outdent indent | ' +
+            'removeformat | image | help',
+        content_style: 'body { font-family:Helvetica,Arial,sans-serif; font-size:14px }',
+        paste_data_images: true,
+        paste_preprocess: function(plugin, args) {
+            args.content = preprocessHtml(args.content);
+        },
+        setup: function(ed) {
+            editor = ed;
+            ed.on('input change', function(e) {
+                console.log('Editor content changed');
+                let content = ed.getContent();
+                console.log('Raw content:', content);
+                let markdown = turndownService.turndown(content);
+                console.log('Converted to Markdown:', markdown);
+                sendValue(markdown);
+            });
+        },
+    });
 }
-
-pasteArea.addEventListener('paste', function(e) {
-    e.preventDefault();
-    
-    let paste = (e.clipboardData || window.clipboardData).getData('text/html');
-    
-    if (!paste) {
-        paste = (e.clipboardData || window.clipboardData).getData('text/plain');
-        paste = paste.replace(/\n/g, '<br>');
-    }
-    
-    console.log("Pasted content:", paste);
-    
-    const sanitizedHtml = DOMPurify.sanitize(paste);
-    
-    const selection = window.getSelection();
-    if (selection.rangeCount > 0) {
-        const range = selection.getRangeAt(0);
-        range.deleteContents();
-        const fragment = range.createContextualFragment(sanitizedHtml);
-        range.insertNode(fragment);
-    } else {
-        pasteArea.innerHTML += sanitizedHtml;
-    }
-    
-    updateMarkdown();
-});
-
-pasteArea.addEventListener('input', updateMarkdown);
 
 function onRender(event) {
+    console.log('Render event received');
     const {theme} = event.detail.args;
     if (theme) {
-        pasteArea.style.color = theme.textColor;
-        pasteArea.style.backgroundColor = theme.backgroundColor;
+        document.body.style.color = theme.textColor;
+        document.body.style.backgroundColor = theme.backgroundColor;
     }
 }
 
-Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, onRender);
+// Wait for the DOM to be fully loaded
+document.addEventListener('DOMContentLoaded', (event) => {
+    console.log('DOM fully loaded');
+    initializeEditor();
+    Streamlit.setComponentReady();
+});
 
-// Initialize the component
-updateMarkdown();
-Streamlit.setComponentReady();
+Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, onRender);

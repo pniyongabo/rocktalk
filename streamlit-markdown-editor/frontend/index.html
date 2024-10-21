@@ -2,10 +2,10 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HTML to Markdown Converter</title>
+    <title>Markdown WYSIWYG Editor</title>
     <script src="./streamlit-component-lib.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tinymce/5.10.3/tinymce.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/turndown/7.1.1/turndown.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/2.3.3/purify.min.js"></script>
     <style>
@@ -13,46 +13,14 @@
             margin: 0;
             padding: 0;
             height: 100%;
-            font-family: "Source Sans Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
         }
-        #paste-area {
-            box-sizing: border-box;
-            width: 100%;
+        #editor-container {
             height: 100%;
-            border: 1px solid var(--primary-border-color, #ccc);
-            padding: 10px;
-            overflow-y: auto;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            background-color: var(--background-color, transparent);
-            color: var(--text-color, inherit);
-            font-size: 1rem;
-            line-height: 1.6;
-        }
-        #paste-area[contenteditable]:empty:before {
-            content: attr(placeholder);
-            color: var(--secondary-text-color, #888);
         }
     </style>
 </head>
 <body>
-    <div id="paste-area" contenteditable="true" placeholder="Paste your HTML content here..."></div>
+    <textarea id="editor-container"></textarea>
     <script src="./main.js"></script>
-    <script>
-        // This script will set CSS variables based on Streamlit's theme
-        function updateTheme(theme) {
-            document.body.style.setProperty('--primary-border-color', theme.primaryColor);
-            document.body.style.setProperty('--background-color', theme.backgroundColor);
-            document.body.style.setProperty('--text-color', theme.textColor);
-            document.body.style.setProperty('--secondary-text-color', theme.secondaryTextColor);
-        }
-
-        window.addEventListener('message', function(event) {
-            // Ensure the message is from Streamlit
-            if (event.data.type === 'streamlit:render') {
-                updateTheme(event.data.theme);
-            }
-        });
-    </script>
 </body>
 </html>

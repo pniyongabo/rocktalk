@@ -19,6 +19,7 @@ def markdown_editor_input():
         "markdown_editor", path=frontend_dir
     )
     return _component_func(key="markdown_editor", default=None, height=400)
+
 def download_image(url):
     try:
         response = requests.get(url)
@@ -31,6 +32,9 @@ def download_image(url):
     return None
 
 def process_markdown(markdown_content):
+    if markdown_content is None:
+        return ""
+    
     # Regular expression to find image markdown
     img_pattern = r'!\[([^\]]*)\]\(([^)]+)\)'
     
@@ -62,13 +66,13 @@ if st.button("Submit"):
 
         st.subheader("Rendered Markdown:")
         st.markdown(processed_content)
-
-        print(processed_content)
-
+        if processed_content:
+            print(process_markdown)
     else:
         st.warning("No content to submit.")
 
 # Debug information
 st.subheader("Debug Information:")
 st.write(f"markdown_content type: {type(markdown_content)}")
-st.write(f"markdown_content value: {markdown_content}")
+st.write("markdown_content value:")
+st.code(markdown_content)
