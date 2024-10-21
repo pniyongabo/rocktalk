@@ -1,35 +1,18 @@
+// Initialize editor variable to store the TinyMCE editor instance
 let editor;
+
+// Initialize TurndownService with custom settings for Markdown conversion
 const turndownService = new TurndownService({
-    headingStyle: 'atx',
-    codeBlockStyle: 'fenced',
-    emDelimiter: '*',
-    strongDelimiter: '**',
-    bulletListMarker: '-',
-    linkStyle: 'inlined',
-    linkReferenceStyle: 'full'
+    headingStyle: 'atx',           // Use # style headings
+    codeBlockStyle: 'fenced',      // Use ``` for code blocks
+    emDelimiter: '*',              // Use * for italics
+    strongDelimiter: '**',         // Use ** for bold
+    bulletListMarker: '-',         // Use - for unordered lists
+    linkStyle: 'inlined',          // Use [text](url) style links
+    linkReferenceStyle: 'full'     // Use [text][id] with full reference links
 });
 
-function preprocessHtml(html) {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
-    
-    doc.querySelectorAll('span').forEach(span => {
-        const style = span.getAttribute('style') || '';
-        if (style.includes('font-weight:700') || style.includes('font-weight:bold')) {
-            const strong = doc.createElement('strong');
-            strong.innerHTML = span.innerHTML;
-            span.parentNode.replaceChild(strong, span);
-        } else if (style.includes('font-style:italic')) {
-            const em = doc.createElement('em');
-            em.innerHTML = span.innerHTML;
-            span.parentNode.replaceChild(em, span);
-        }
-    });
-
-    return doc.body.innerHTML;
-}
-
-// Custom rule for lists
+// Custom rule for handling lists (both ordered and unordered)
 turndownService.addRule('lists', {
     filter: ['ul', 'ol'],
     replacement: function (content, node) {
@@ -38,18 +21,18 @@ turndownService.addRule('lists', {
         return listItems.map((item, index) => {
             const prefix = isOrdered ? `${index + 1}. ` : '- ';
             return prefix + item.trim();
-        }).join('\n') + '\n\n';
+        }).join('\n') + '\n\n';  // Add extra newline for spacing between lists
     }
 });
 
-// Custom rule for list items
+// Custom rule for handling list items with proper indentation
 turndownService.addRule('listItems', {
     filter: 'li',
-    replacement: function (content, node, options) {
+    replacement: function (content, node) {
         content = content.trim();
         let prefix = '';
         
-        // Calculate the nesting level
+        // Calculate the nesting level of the list item
         let level = 0;
         let parent = node.parentNode;
         while (parent && (parent.nodeName === 'UL' || parent.nodeName === 'OL')) {
@@ -64,59 +47,91 @@ turndownService.addRule('listItems', {
     }
 });
 
+// Function to send the converted Markdown value to Streamlit
 function sendValue(value) {
     console.log('Sending value to Streamlit:', value);
     Streamlit.setComponentValue(value);
 }
 
+// Function to initialize the TinyMCE editor
 function initializeEditor() {
     console.log('Initializing editor');
     tinymce.init({
+        // Select the editor container
         selector: '#editor-container',
+        // Set editor height
         height: '100%',
+        // Disable menu bar
         menubar: false,
+        // Enable necessary plugins
         plugins: [
             'advlist autolink lists link image charmap print preview anchor',
             'searchreplace visualblocks code fullscreen',
             'insertdatetime media table code help wordcount'
         ],
+        // Configure toolbar
         toolbar: 'undo redo | formatselect | ' +
             'bold italic backcolor | alignleft aligncenter ' +
             'alignright alignjustify | bullist numlist outdent indent | ' +
             'removeformat | image | help',
+        // Set content style
         content_style: 'body { font-family:Helvetica,Arial,sans-serif; font-size:14px }',
+        // Allow pasting of images
         paste_data_images: true,
-        paste_preprocess: function(plugin, args) {
-            args.content = preprocessHtml(args.content);
-        },
+        // Setup editor events
         setup: function(ed) {
             editor = ed;
-            ed.on('input change', function(e) {
+            // Add listener for input and change events
+            ed.on('input change', debounce(function(e) {
                 console.log('Editor content changed');
                 let content = ed.getContent();
                 console.log('Raw content:', content);
+                // Convert HTML to Markdown
                 let markdown = turndownService.turndown(content);
                 console.log('Converted to Markdown:', markdown);
+                // Send Markdown to Streamlit
                 sendValue(markdown);
-            });
+            }, 300)); // Debounce for 300ms to reduce unnecessary conversions
         },
     });
 }
 
+// Debounce function to limit the rate of function calls
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+// Function to handle render event from Streamlit
 function onRender(event) {
     console.log('Render event received');
     const {theme} = event.detail.args;
+    // Apply theme if provided
     if (theme) {
-        document.body.style.color = theme.textColor;
-        document.body.style.backgroundColor = theme.backgroundColor;
+        applyTheme(theme);
     }
 }
 
-// Wait for the DOM to be fully loaded
+// Function to apply theme to the editor
+function applyTheme(theme) {
+    document.body.style.color = theme.textColor;
+    document.body.style.backgroundColor = theme.backgroundColor;
+    // You can add more theme-related styling here if needed
+}
+
+// Wait for the DOM to be fully loaded before initializing
 document.addEventListener('DOMContentLoaded', (event) => {
     console.log('DOM fully loaded');
     initializeEditor();
     Streamlit.setComponentReady();
 });
 
+// Add listener for Streamlit render event
 Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, onRender);
