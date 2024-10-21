@@ -1,0 +1,7 @@
+streamlit
+langchain
+boto3
+python-dotenv
+PyPDF2
+requests
+watchdog
