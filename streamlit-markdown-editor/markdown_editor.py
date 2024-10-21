@@ -116,3 +116,5 @@ if st.button("Submit"):
 st.subheader("Debug Information:")
 st.write(f"markdown_content type: {type(markdown_content)}")
 st.write(f"markdown_content value: {markdown_content}")
+if markdown_content:
+    print(markdown_content)
