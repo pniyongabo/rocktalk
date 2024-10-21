@@ -12,6 +12,30 @@ const turndownService = new TurndownService({
     linkReferenceStyle: 'full'     // Use [text][id] with full reference links
 });
 
+// Custom rule to handle inline styles for bold and italic
+turndownService.addRule('inlineStyles', {
+   filter: function (node, options) {
+       return (
+           node.nodeName === 'SPAN' &&
+           node.style &&
+           (node.style.fontWeight === 'bold' || node.style.fontWeight === '700' ||
+            node.style.fontStyle === 'italic')
+       );
+   },
+   replacement: function (content, node, options) {
+       const isBold = node.style.fontWeight === 'bold' || node.style.fontWeight === '700';
+       const isItalic = node.style.fontStyle === 'italic';
+       if (isBold && isItalic) {
+           return `***${content}***`;
+       } else if (isBold) {
+           return `**${content}**`;
+       } else if (isItalic) {
+           return `*${content}*`;
+       }
+       return content;
+   }
+});
+
 // Custom rule for handling lists (both ordered and unordered)
 turndownService.addRule('lists', {
     filter: ['ul', 'ol'],
