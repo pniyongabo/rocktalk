@@ -67,7 +67,7 @@ if st.button("Submit"):
         st.subheader("Rendered Markdown:")
         st.markdown(processed_content)
         if processed_content:
-            print(process_markdown)
+            print(processed_content)
     else:
         st.warning("No content to submit.")
 

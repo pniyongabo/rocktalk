@@ -40,23 +40,20 @@ turndownService.addRule('inlineStyles', {
 turndownService.addRule('lists', {
     filter: ['ul', 'ol'],
     replacement: function (content, node) {
-        const isOrdered = node.nodeName === 'OL';
-        const listItems = content.trim().split('\n');
-        return listItems.map((item, index) => {
-            const prefix = isOrdered ? `${index + 1}. ` : '- ';
-            return prefix + item.trim();
-        }).join('\n') + '\n\n';  // Add extra newline for spacing between lists
+        // The content of each list item will be handled by the 'listItems' rule
+        return content + '\n';
     }
 });
 
-// Custom rule for handling list items with proper indentation
+// Custom rule for handling list items with proper indentation and numbering
 turndownService.addRule('listItems', {
     filter: 'li',
-    replacement: function (content, node) {
+    replacement: function (content, node, options) {
         content = content.trim();
         let prefix = '';
+        let listMarker = '';
         
-        // Calculate the nesting level of the list item
+        // Calculate the nesting level
         let level = 0;
         let parent = node.parentNode;
         while (parent && (parent.nodeName === 'UL' || parent.nodeName === 'OL')) {
@@ -67,9 +64,29 @@ turndownService.addRule('listItems', {
         // Add indentation based on nesting level
         prefix = '  '.repeat(level - 1);
         
-        return prefix + content + '\n';
+        // Determine if it's an ordered or unordered list item
+        if (node.parentNode.nodeName === 'OL') {
+            let start = parseInt(node.parentNode.getAttribute('start') || '1');
+            
+            // Count only sibling <li> elements at the same level
+            let index = 0;
+            let sibling = node;
+            while (sibling.previousElementSibling) {
+                if (sibling.previousElementSibling.nodeName === 'LI') {
+                    index++;
+                }
+                sibling = sibling.previousElementSibling;
+            }
+            
+            listMarker = (start + index) + '. ';
+        } else {
+            listMarker = '- ';
+        }
+        
+        return prefix + listMarker + content + '\n';
     }
 });
+
 
 // Function to send the converted Markdown value to Streamlit
 function sendValue(value) {
