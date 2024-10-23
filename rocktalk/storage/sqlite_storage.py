@@ -61,38 +61,56 @@ class SQLiteChatStorage(ChatStorage):
             ''')
 
     def create_session(self, title: str, subject: Optional[str] = None, 
-                      metadata: Optional[Dict] = None) -> str:
+                  metadata: Optional[Dict] = None,
+                  created_at: Optional[datetime] = None,
+                  last_active: Optional[datetime] = None) -> str:
         """Create a new chat session"""
         session_id = str(uuid.uuid4())
         current_time = datetime.now()
+        
+        # Use provided timestamps or default to current time
+        created_at = created_at or current_time
+        last_active = last_active or created_at
+        
+        # Format timestamps consistently
+        created_at_str = created_at.strftime('%Y-%m-%d %H:%M:%S')
+        last_active_str = last_active.strftime('%Y-%m-%d %H:%M:%S')
+        
         with self.get_connection() as conn:
             conn.execute('''
                 INSERT INTO chat_sessions 
                 (session_id, title, created_at, last_active, subject, metadata)
                 VALUES (?, ?, ?, ?, ?, ?)
-            ''', (session_id, title, current_time, current_time, subject, 
-                  json.dumps(metadata) if metadata else None))
+            ''', (session_id, title, created_at_str, last_active_str, subject, 
+                json.dumps(metadata) if metadata else None))
         return session_id
 
     def save_message(self, session_id: str, role: str, content: str, 
-                    metadata: Optional[Dict] = None):
+                    metadata: Optional[Dict] = None,
+                    created_at: Optional[datetime] = None):
         """Save a message to a chat session and update last_active"""
         current_time = datetime.now()
+        message_time = created_at or current_time
+        
+        # Format timestamp consistently
+        message_time_str = message_time.strftime('%Y-%m-%d %H:%M:%S')
+        
         with self.get_connection() as conn:
-            # Save the message
             conn.execute('''
                 INSERT INTO messages 
                 (message_id, session_id, role, content, timestamp, metadata)
                 VALUES (?, ?, ?, ?, ?, ?)
             ''', (str(uuid.uuid4()), session_id, role, content, 
-                  current_time, json.dumps(metadata) if metadata else None))
+                message_time_str, json.dumps(metadata) if metadata else None))
             
             # Update session's last_active timestamp
             conn.execute('''
                 UPDATE chat_sessions 
                 SET last_active = ? 
                 WHERE session_id = ?
-            ''', (current_time, session_id))
+            ''', (message_time_str, session_id))
+
+
 
     def get_session_messages(self, session_id: str) -> List[Dict]:
         """Get all messages for a session"""
