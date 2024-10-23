@@ -48,3 +48,8 @@ class ChatStorage(ABC):
     def get_recent_sessions(self, limit: int = 10) -> List[Dict]:
         """Get most recently active sessions"""
         pass
+
+    @abstractmethod
+    def rename_session(self, session_id: str, new_title: str):
+        """Rename a chat session"""
+        pass

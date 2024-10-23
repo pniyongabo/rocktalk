@@ -177,3 +177,12 @@ class SQLiteChatStorage(ChatStorage):
                 LIMIT ?
             ''', (limit,))
             return [dict(row) for row in cursor.fetchall()]
+
+    def rename_session(self, session_id: str, new_title: str):
+        """Rename a chat session"""
+        with self.get_connection() as conn:
+            conn.execute('''
+                UPDATE chat_sessions 
+                SET title = ?, last_active = ?
+                WHERE session_id = ?
+            ''', (new_title, datetime.now(), session_id))

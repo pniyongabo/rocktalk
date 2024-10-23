@@ -179,4 +179,4 @@ cython_debug/
 *.vsix
 
 # chat database
-chat_database.db
+*.db
