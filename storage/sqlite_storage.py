@@ -173,7 +173,7 @@ class SQLiteChatStorage(ChatStorage):
                 FROM chat_sessions s
                 LEFT JOIN messages m ON s.session_id = m.session_id
                 GROUP BY s.session_id
-                ORDER BY MAX(m.timestamp) DESC NULLS LAST
+                ORDER BY s.last_active DESC, s.created_at DESC
                 LIMIT ?
             ''', (limit,))
             return [dict(row) for row in cursor.fetchall()]

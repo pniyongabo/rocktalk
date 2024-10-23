@@ -30,6 +30,11 @@ if "llm" not in st.session_state:
     )
     print("--- LLM initialized ---")
 
+
+# Initialize session state variables
+if "last_update" not in st.session_state:
+    st.session_state.last_update = datetime.now()
+
 # Create sidebar for session management
 with st.sidebar:
     st.title("Chat Sessions")
@@ -50,10 +55,11 @@ with st.sidebar:
         timestamp = datetime.fromisoformat(session["last_active"])
         message_count = session.get("message_count", 0)
         
-        # Create a clickable session title
+        # Create a clickable session title with better formatting
         if st.button(
-            f"{title}\n{timestamp.strftime('%Y-%m-%d %H:%M')}\n{message_count} messages",
-            key=f"session_{session['session_id']}"
+            f"📝 {title}\n🕒 {timestamp.strftime('%Y-%m-%d %H:%M')}\n💬 {message_count} messages",
+            key=f"session_{session['session_id']}",
+            use_container_width=True,
         ):
             # Load selected session
             st.session_state.current_session_id = session["session_id"]
@@ -99,6 +105,7 @@ if prompt := st.chat_input("Hello!"):
             subject=title,
             metadata={"model": "anthropic.claude-3-sonnet-20240229-v1:0"}
         )
+        # Don't rerun here - let the conversation flow continue
 
     # Display and save user message
     with st.chat_message("user"):
@@ -154,3 +161,9 @@ if prompt := st.chat_input("Hello!"):
         )
 
         message_placeholder.markdown(full_response)
+        
+        # Update last_update timestamp
+        st.session_state.last_update = datetime.now()
+        
+        # Now rerun after the complete conversation turn is saved
+        st.rerun()
