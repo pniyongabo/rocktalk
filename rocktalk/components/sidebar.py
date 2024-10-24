@@ -166,7 +166,7 @@ class Sidebar:
                                             st.markdown("#### Basic Info")
                                             st.code(
                                                 f"""Session ID: {session['session_id']}
-                                        Title: {session['title']}
+                                        Title: {session['title'][:57] + '...' if len(session['title']) > 57 and not session['title'][57].isspace() else session['title'][:60]}
                                         Created: {session['created_at']}
                                         Last Active: {session['last_active']}
                                         Message Count: {session['message_count']}"""

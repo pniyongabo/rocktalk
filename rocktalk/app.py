@@ -19,6 +19,7 @@ dotenv.load_dotenv()
 
 # Set page configuration
 st.set_page_config(page_title="RockTalk", page_icon="🪨", layout="wide")
+st.subheader("RockTalk: Powered by AWS Bedrock 🪨 + LangChain 🦜️🔗 + Streamlit 👑")
 
 # Initialize storage in session state
 if "storage" not in st.session_state:

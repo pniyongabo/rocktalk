@@ -12,7 +12,6 @@ class ChatInterface:
         self.llm = llm
 
     def render(self):
-        st.header("RockTalk: Powered by AWS Bedrock 🪨 + LangChain 🦜️🔗 + Streamlit 👑")
         self._display_chat_history()
         self._handle_chat_input()
 
@@ -50,7 +49,7 @@ class ChatInterface:
     def _generate_session_title(self, human_message: str, ai_response: str) -> str:
         """Generate a concise session title using the LLM with full conversation context"""
         title_prompt = HumanMessage(
-            content=f"""Summarize this conversation's topic in less than 6 words or about 50 characters.
+            content=f"""Summarize this conversation's topic in up to 5 words or about 40 characters. More details are useful, but space is limited to show this summary, so ideally 2-4 words.
             Be direct and concise, no explanations needed.
             
             Conversation:
@@ -58,9 +57,7 @@ class ChatInterface:
             Assistant: {ai_response}"""
         )
 
-        title_response = self.llm.invoke([title_prompt])
-        # Clean up the response - remove quotes, newlines, and limit length
-        title = title_response.content.strip('" \n').strip()[:50]
+        title = self.llm.invoke([title_prompt]).content.strip('" \n').strip()
 
         # Fallback to timestamp if we get an empty or invalid response
         if not title:
