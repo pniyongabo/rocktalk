@@ -36,15 +36,12 @@ class ChatInterface:
         st.session_state.messages.append(human_input)
 
         if st.session_state.current_session_id:
-            # Save user message to storage
+            # Save user message to storage if we have an existing session, otherwise defer until AI response creates the session
             st.session_state.storage.save_message(
                 session_id=st.session_state.current_session_id,
                 role="user",
                 content=prompt,
             )
-        else:
-            # defer to session creation after AI response
-            pass
 
     def _generate_session_title(self, human_message: str, ai_response: str) -> str:
         """Generate a concise session title using the LLM with full conversation context"""
@@ -82,10 +79,6 @@ class ChatInterface:
                         text = item["text"]
                         full_response += text
                         print(text, end="", flush=True)
-                    elif "index" in item and item["index"] == 0:
-                        print("\nEOF?\n")
-                    else:
-                        print(f"Unexpected chunk type: {item}")
 
                     message_placeholder.markdown(full_response + "▌")
 
@@ -116,18 +109,6 @@ class ChatInterface:
                     role="user",
                     content=human_message,
                 )
-                # # Use first sentence as title, fallback to timestamp
-                # title = (
-                #     prompt.split(".")[0][:50]
-                #     if "." in prompt
-                #     else f"Chat {datetime.now()}"
-                # )
-                # st.session_state.current_session_id = self.storage.create_session(
-                #     title=title,
-                #     subject=title,
-                #     metadata={"model": "anthropic.claude-3-sonnet-20240229-v1:0"},
-                # )
-                # # Don't rerun here - let the conversation flow continue
 
             st.session_state.messages.append(ai_response)
 

@@ -26,9 +26,6 @@ if "storage" not in st.session_state:
     st.session_state.storage = SQLiteChatStorage(db_path="chat_database.db")
     print("--- Storage initialized ---")
 
-if "open_menu_id" not in st.session_state:
-    st.session_state.open_menu_id = None
-
 # Initialize LLM object in session state
 if "llm" not in st.session_state:
     st.session_state.llm = ChatBedrockConverse(
@@ -43,10 +40,6 @@ if "llm" not in st.session_state:
 if "messages" not in st.session_state:
     st.session_state.messages = []
     print("--- Chat history initialized ---")
-
-# Initialize session state variables
-if "last_update" not in st.session_state:
-    st.session_state.last_update = datetime.now()
 
 # Initialize current session ID if not exists
 if "current_session_id" not in st.session_state:
