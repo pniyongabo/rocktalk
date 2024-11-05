@@ -1,109 +1,67 @@
-# Import required datetime classes for time-based operations
 from datetime import datetime, timedelta
+from typing import List, Tuple
 
-# Import pandas library with alias 'pd' for data manipulation and analysis
 import pandas as pd
-from .datetime_utils import DATETIME_FORMAT
+
+from models.interfaces import ChatSession
+
+DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
 def create_date_masks(
-    recent_sessions: pd.DataFrame,
-) -> tuple[list[tuple[str, pd.Series]], pd.DataFrame]:
+    recent_sessions: List[ChatSession],
+) -> Tuple[List[Tuple[str, pd.Series]], pd.DataFrame]:
     """
     Creates time-based masks for a DataFrame containing session data.
 
     This function takes session data and creates boolean masks to categorize sessions into
-    different time periods: Today, Yesterday, This Week, This Month, Last 6 Months,
-    Last Year, and Older.
+    different time periods: Current month, past 11 months, and then by year for older sessions.
 
     Args:
-        recent_sessions (pd.DataFrame): DataFrame containing session data with 'last_active' column
-                                      The 'last_active' column should contain timestamp information
-                                      for when each session was last active.
+        recent_sessions (List[ChatSession]): List of ChatSession objects containing session data
 
     Returns:
-        tuple[list[tuple[str, pd.Series]], pd.DataFrame]: A tuple containing:
+        Tuple[List[Tuple[str, pd.Series]], pd.DataFrame]: A tuple containing:
             - List of tuples, where each tuple contains:
-                - A string label for the time period (e.g., "Today")
+                - A string label for the time period (e.g., "July 2023")
                 - A boolean mask (pandas Series) indicating which sessions belong to that time period
-            - The processed and sorted DataFrame of sessions
+            - The processed DataFrame of sessions
     """
-    # Convert input to DataFrame format if it isn't already
-    # This ensures consistent data handling regardless of input format
-    df_sessions = pd.DataFrame(recent_sessions)
+    # Convert the list of ChatSession objects to a DataFrame
+    df_sessions = pd.DataFrame([session.dict() for session in recent_sessions])
 
-    # Convert 'last_active' column to datetime format
-    # This enables datetime operations and comparisons on the timestamps
-    df_sessions["last_active"] = pd.to_datetime(
-        df_sessions["last_active"], format=DATETIME_FORMAT
-    )
+    # Ensure datetime columns are in the correct format
+    df_sessions["last_active"] = pd.to_datetime(df_sessions["last_active"])
+    df_sessions["created_at"] = pd.to_datetime(df_sessions["created_at"])
 
-    # Sort sessions by date in descending order (newest to oldest)
-    # This aids in chronological organization and potential performance optimizations
-    df_sessions = df_sessions.sort_values("last_active", ascending=False)
+    now = datetime.now()
+    current_month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-    # Get current timestamp and extract current date
-    # Using pandas Timestamp for consistency with DataFrame operations
-    now = pd.Timestamp.now()
-    today = now.date()
+    masks = []
 
-    # Create masks for different time periods
-    # Each mask is a boolean Series where True indicates the session belongs to that period
+    # Create masks for the current month and past 11 months
+    for i in range(12):
+        month_start = current_month_start - pd.DateOffset(months=i)
+        month_end = month_start + pd.DateOffset(months=1)
+        month_label = month_start.strftime("%B %Y")
 
-    # Today's sessions: Sessions that occurred on the current date
-    today_mask = df_sessions["last_active"].dt.date == today
+        mask = (df_sessions["last_active"] >= month_start) & (
+            df_sessions["last_active"] < month_end
+        )
+        masks.append((month_label, mask))
 
-    # Yesterday's sessions: Sessions that occurred exactly one day ago
-    yesterday_mask = df_sessions["last_active"].dt.date == (today - timedelta(days=1))
+    # Create masks for previous years
+    oldest_date = df_sessions["last_active"].min()
+    current_year = now.year
 
-    # This week's sessions: Sessions from the past 7 days, excluding today and yesterday
-    # The complex condition ensures no overlap with today and yesterday masks
-    this_week_mask = (
-        (df_sessions["last_active"].dt.date > (today - timedelta(days=7)))
-        & (~today_mask)
-        & (~yesterday_mask)
-    )
+    for year in range(current_year - 1, oldest_date.year - 1, -1):
+        year_start = datetime(year, 1, 1)
+        year_end = datetime(year + 1, 1, 1)
+        year_mask = (df_sessions["last_active"] >= year_start) & (
+            df_sessions["last_active"] < year_end
+        )
 
-    # This month's sessions: Sessions from the past 30 days, excluding more recent periods
-    # Uses multiple conditions to prevent overlap with other time periods
-    this_month_mask = (
-        (df_sessions["last_active"].dt.date > (today - timedelta(days=30)))
-        & (~today_mask)
-        & (~yesterday_mask)
-        & (~this_week_mask)
-    )
+        if year_mask.any():
+            masks.append((str(year), year_mask))
 
-    # Last 6 months' sessions: Sessions from the past 180 days, excluding more recent periods
-    six_months_mask = (
-        (df_sessions["last_active"].dt.date > (today - timedelta(days=180)))
-        & (~today_mask)
-        & (~yesterday_mask)
-        & (~this_week_mask)
-        & (~this_month_mask)
-    )
-
-    # Last year's sessions: Sessions from the past 365 days, excluding more recent periods
-    last_year_mask = (
-        (df_sessions["last_active"].dt.date > (today - timedelta(days=365)))
-        & (~today_mask)
-        & (~yesterday_mask)
-        & (~this_week_mask)
-        & (~this_month_mask)
-        & (~six_months_mask)
-    )
-
-    # Older sessions: Any sessions older than 1 year
-    # Simple comparison to find all sessions before the 365-day cutoff
-    older_mask = df_sessions["last_active"].dt.date <= (today - timedelta(days=365))
-
-    # Return both the masks and the processed DataFrame
-    # Masks are returned as tuples containing a descriptive label and the boolean mask
-    return [
-        ("Today", today_mask),
-        ("Yesterday", yesterday_mask),
-        ("This Week", this_week_mask),
-        ("This Month", this_month_mask),
-        ("Last 6 Months", six_months_mask),
-        ("Last Year", last_year_mask),
-        ("Older", older_mask),
-    ], df_sessions
+    return masks, df_sessions

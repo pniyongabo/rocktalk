@@ -1,18 +1,15 @@
+from datetime import datetime
 from typing import cast
-import boto3
+
 import dotenv
 import streamlit as st
-from datetime import datetime
-from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.schema import AIMessage, HumanMessage
 from langchain_aws import ChatBedrockConverse
-from langchain_core.messages.ai import AIMessageChunk
-from storage.sqlite_storage import SQLiteChatStorage
-from datetime import datetime, timedelta
-import pandas as pd
-from utils.date_utils import create_date_masks
-from components.sidebar import Sidebar
+
 from components.chat import ChatInterface
+from components.sidebar import Sidebar
+from models.interfaces import StorageInterface
+from storage.sqlite_storage import SQLiteChatStorage
 
 # Load environment variables
 dotenv.load_dotenv()
@@ -23,8 +20,13 @@ st.subheader("RockTalk: Powered by AWS Bedrock 🪨 + LangChain 🦜️🔗 + St
 
 # Initialize storage in session state
 if "storage" not in st.session_state:
-    st.session_state.storage = SQLiteChatStorage(db_path="chat_database.db")
+    st.session_state.storage: StorageInterface = SQLiteChatStorage(
+        db_path="chat_database.db"
+    )
     print("--- Storage initialized ---")
+
+if "additional_text" not in st.session_state:
+    st.session_state.additional_text = None
 
 # Initialize LLM object in session state
 if "llm" not in st.session_state:
@@ -38,12 +40,12 @@ if "llm" not in st.session_state:
 
 # Initialize messages list if not exists
 if "messages" not in st.session_state:
-    st.session_state.messages = []
+    st.session_state.messages: list[AIMessage | HumanMessage] = []
     print("--- Chat history initialized ---")
 
 # Initialize current session ID if not exists
 if "current_session_id" not in st.session_state:
-    st.session_state.current_session_id = None
+    st.session_state.current_session_id: str | None = None
 
 sidebar = Sidebar(storage=st.session_state.storage)
 sidebar.render()

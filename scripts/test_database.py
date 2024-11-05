@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from rocktalk.storage.sqlite_storage import SQLiteChatStorage
 from rocktalk.utils.datetime_utils import format_datetime, parse_datetime_string
 from rocktalk.utils.date_utils import DATETIME_FORMAT
+from rocktalk.models.interfaces import ChatSession, ChatMessage
 import random
 from typing import List, Dict
 import os
@@ -122,7 +123,7 @@ class TestDataGenerator:
                 conversation = self.sample_conversations[conv_type]
 
                 # Create session with formatted timestamp
-                session_id = storage.create_session(
+                session = ChatSession.create(
                     title=f"Chat {date_str[:10]} - {conv_type}",  # Use just the date part for the title
                     subject=f"Sample {desc}",
                     metadata={
@@ -133,16 +134,18 @@ class TestDataGenerator:
                     created_at=base_datetime,
                     last_active=base_datetime,
                 )
+                storage.store_session(session)
 
                 # Add messages with timestamps spaced a few minutes apart
                 message_time = base_datetime
                 for role, content in conversation:
-                    storage.save_message(
-                        session_id=session_id,
+                    message = ChatMessage(
+                        session_id=session.session_id,
                         role=role,
                         content=content,
                         created_at=message_time,
                     )
+                    storage.save_message(message)
                     message_time += timedelta(minutes=random.randint(1, 5))
 
         return storage
@@ -163,7 +166,7 @@ def create_sample_database(
 
 if __name__ == "__main__":
     import logging
-    import traceback  # Add this import
+    import traceback
 
     # Set up logging with more detail
     logging.basicConfig(
@@ -171,11 +174,6 @@ if __name__ == "__main__":
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
     logger = logging.getLogger(__name__)
-
-    # Optional: Create with custom reference date
-    # custom_date = datetime(2024, 12, 25)  # Christmas 2024
-    # storage = create_sample_database(custom_date, "christmas_test.db")
-    # logger.info("Custom test database created successfully!")
 
     try:
         logger.info("Starting test database creation...")
@@ -185,5 +183,5 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error("Error creating test database: %s", str(e))
         logger.error("Full stack trace:")
-        logger.error(traceback.format_exc())  # This will show the full stack trace
+        logger.error(traceback.format_exc())
         raise  # Re-raise the exception to see the full traceback

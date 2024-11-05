@@ -1,9 +1,14 @@
-from typing import List
-import streamlit as st
 from datetime import datetime
-from models.interfaces import StorageInterface
-from utils.date_utils import create_date_masks
+
+import streamlit as st
+from devtools import debug
 from langchain.schema import AIMessage, HumanMessage
+from pydantic import BaseModel
+
+from models.interfaces import ChatExport, ChatMessage, ChatSession, StorageInterface
+from utils.date_utils import create_date_masks
+
+from .dialogs import open_text_dialog, upload_dialog
 from .session_modal import session_settings
 
 
@@ -13,6 +18,63 @@ class Sidebar:
 
     def render(self):
         with st.sidebar:
+
+            file_upload = st.button("Open file upload", type="primary")
+            if file_upload:
+                upload_dialog()
+
+            text_box_button = st.button("Open text box", type="primary")
+            if text_box_button:
+                open_text_dialog()
+
+            if st.session_state.current_session_id:
+                session_id: str = st.session_state.current_session_id
+                messages = self.storage.get_session_messages(session_id)
+                session = self.storage.get_session_info(session_id)
+
+                export_data = ChatExport(
+                    session=session, messages=messages, exported_at=datetime.now()
+                )
+
+                # Create download button
+                st.download_button(
+                    label="Download Conversation",
+                    data=export_data.model_dump_json(indent=2),
+                    file_name=f"conversation_{session_id}.json",
+                    mime="application/json",
+                )
+
+            with st.form("Session upload form", clear_on_submit=True):
+
+                submitted = st.form_submit_button("UPLOAD!")
+                uploaded_file = st.file_uploader(
+                    "Import Conversation", type=["json"], key="conversation_import"
+                )
+
+                if submitted and uploaded_file is not None:
+                    try:
+                        import_data = ChatExport.model_validate_json(
+                            uploaded_file.getvalue()
+                        )
+                        debug(import_data)
+                        # Create new session
+                        self.storage.store_session(import_data.session)
+
+                        # Import messages
+                        for msg in import_data.messages:
+                            self.storage.save_message(msg)
+
+                        st.success("Conversation imported successfully!")
+                        st.session_state.current_session_id = (
+                            import_data.session.session_id
+                        )
+                        uploaded_file.close()
+                        st.rerun()
+
+                    except Exception as e:
+                        st.error(f"Error importing conversation: {str(e)}")
+                        raise e
+
             st.sidebar.title("Chat Sessions")
             self._render_new_chat_button()
             self._render_session_list()
@@ -25,7 +87,7 @@ class Sidebar:
 
     def _render_session_list(self):
         # Get recent sessions
-        recent_sessions = st.session_state.storage.get_recent_sessions(limit=100)
+        recent_sessions = self.storage.get_recent_sessions(limit=100)
 
         if recent_sessions:
             groups, df_sessions = create_date_masks(recent_sessions=recent_sessions)
@@ -38,7 +100,7 @@ class Sidebar:
                     st.subheader(group_name)
 
                     # Display sessions within each group
-                    for _, session in group_sessions.iterrows():
+                    for _, df_session in group_sessions.iterrows():
                         # Container for each session row
                         with st.container():
                             col1, col2 = st.columns([0.9, 0.1], gap="small")
@@ -46,27 +108,25 @@ class Sidebar:
                             with col1:
                                 # Main session button
                                 if st.button(
-                                    f"{session['title']}",
-                                    key=f"session_{session['session_id']}",
+                                    f"{df_session['title']}",
+                                    key=f"session_{df_session['session_id']}",
                                     use_container_width=True,
                                 ):
-                                    st.session_state.current_session_id = session[
+                                    st.session_state.current_session_id = df_session[
                                         "session_id"
                                     ]
-                                    messages = (
-                                        st.session_state.storage.get_session_messages(
-                                            session["session_id"]
-                                        )
+                                    messages = self.storage.get_session_messages(
+                                        df_session["session_id"]
                                     )
                                     st.session_state.messages = [
                                         (
                                             HumanMessage(
-                                                content=msg["content"],
+                                                content=msg.content,
                                                 additional_kwargs={"role": "user"},
                                             )
-                                            if msg["role"] == "user"
+                                            if msg.role == "user"
                                             else AIMessage(
-                                                content=msg["content"],
+                                                content=msg.content,
                                                 additional_kwargs={"role": "assistant"},
                                             )
                                         )
@@ -78,7 +138,7 @@ class Sidebar:
                                 # Menu trigger button
                                 if st.button(
                                     "⋮",
-                                    key=f"menu_trigger_{session['session_id']}",
+                                    key=f"menu_trigger_{df_session['session_id']}",
                                     help="Session options",
                                 ):
-                                    session_settings(session)
+                                    session_settings(df_session)

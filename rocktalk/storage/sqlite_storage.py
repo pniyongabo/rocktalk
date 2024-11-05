@@ -1,11 +1,14 @@
-import sqlite3
-from datetime import datetime
-import uuid
 import json
-from typing import Optional, List, Dict
+import sqlite3
+import uuid
+from datetime import datetime
 from pathlib import Path
+from typing import Dict, List, Optional
 
-from rocktalk.utils.datetime_utils import format_datetime, parse_datetime
+from devtools import debug
+
+from models.interfaces import ChatMessage, ChatSession
+from utils.datetime_utils import format_datetime, parse_datetime
 
 
 class SQLiteChatStorage:
@@ -66,25 +69,7 @@ class SQLiteChatStorage:
             """
             )
 
-    def create_session(
-        self,
-        title: str,
-        subject: Optional[str] = None,
-        metadata: Optional[Dict] = None,
-        created_at: Optional[datetime] = None,
-        last_active: Optional[datetime] = None,
-    ) -> str:
-        """Create a new chat session"""
-        session_id = str(uuid.uuid4())
-        current_time = datetime.now()  # Use standard format
-
-        # Use provided timestamps or default to current time
-        created_at = created_at or current_time
-        last_active = last_active or created_at
-
-        # Format timestamps consistently
-        created_at_str = format_datetime(created_at)
-        last_active_str = format_datetime(last_active)
+    def store_session(self, session: ChatSession):
 
         with self.get_connection() as conn:
             conn.execute(
@@ -94,29 +79,18 @@ class SQLiteChatStorage:
                 VALUES (?, ?, ?, ?, ?, ?)
             """,
                 (
-                    session_id,
-                    title,
-                    created_at_str,
-                    last_active_str,
-                    subject,
-                    json.dumps(metadata) if metadata else None,
+                    session.session_id,
+                    session.title,
+                    format_datetime(session.created_at),
+                    format_datetime(session.last_active),
+                    session.subject,
+                    json.dumps(session.metadata),
                 ),
             )
-        return session_id
+        return session
 
-    def save_message(
-        self,
-        session_id: str,
-        role: str,
-        content: str,
-        metadata: Optional[Dict] = None,
-        created_at: Optional[datetime] = None,
-    ):
+    def save_message(self, message: ChatMessage) -> None:
         """Save a message to a chat session and update last_active"""
-        current_time = datetime.now()
-        message_time = created_at or current_time
-        message_time_str = format_datetime(message_time)
-
         with self.get_connection() as conn:
             conn.execute(
                 """
@@ -125,11 +99,11 @@ class SQLiteChatStorage:
                 VALUES (?, ?, ?, ?, ?)
             """,
                 (
-                    session_id,
-                    role,
-                    content,
-                    message_time_str,
-                    json.dumps(metadata) if metadata else None,
+                    message.session_id,
+                    message.role,
+                    message.content,
+                    format_datetime(message.created_at),
+                    json.dumps(message.metadata),
                 ),
             )
 
@@ -140,10 +114,45 @@ class SQLiteChatStorage:
                 SET last_active = ? 
                 WHERE session_id = ?
             """,
-                (message_time_str, session_id),
+                (format_datetime(message.created_at), message.session_id),
             )
 
-    def get_session_messages(self, session_id: str) -> List[Dict]:
+    def _deserialize_message(self, row: sqlite3.Row) -> ChatMessage:
+        """Deserialize a message from the database row"""
+        return ChatMessage(
+            session_id=row["session_id"],
+            role=row["role"],
+            content=row["content"],
+            created_at=parse_datetime(row["timestamp"]),
+            metadata=json.loads(row["metadata"]) if row["metadata"] else {},
+        )
+
+    def _deserialize_session(self, row: sqlite3.Row) -> ChatSession:
+        """Deserialize a session from the database row"""
+        session_data = dict(row)
+        return ChatSession(
+            session_id=session_data["session_id"],
+            title=session_data["title"],
+            subject=session_data["subject"],
+            created_at=parse_datetime(session_data["created_at"]),
+            last_active=parse_datetime(session_data["last_active"]),
+            metadata=(
+                json.loads(session_data["metadata"]) if session_data["metadata"] else {}
+            ),
+            message_count=session_data.get("message_count"),
+            first_message=(
+                parse_datetime(session_data["first_message"])
+                if session_data.get("first_message")
+                else None
+            ),
+            last_message=(
+                parse_datetime(session_data["last_message"])
+                if session_data.get("last_message")
+                else None
+            ),
+        )
+
+    def get_session_messages(self, session_id: str) -> List[ChatMessage]:
         """Get all messages for a session"""
         with self.get_connection() as conn:
             cursor = conn.execute(
@@ -154,9 +163,9 @@ class SQLiteChatStorage:
             """,
                 (session_id,),
             )
-            return [dict(row) for row in cursor.fetchall()]
+            return [self._deserialize_message(row) for row in cursor.fetchall()]
 
-    def search_sessions(self, query: str) -> List[Dict]:
+    def search_sessions(self, query: str) -> List[ChatSession]:
         """Search sessions by content, title, or subject"""
         with self.get_connection() as conn:
             cursor = conn.execute(
@@ -175,11 +184,11 @@ class SQLiteChatStorage:
             """,
                 (f"%{query}%", f"%{query}%", f"%{query}%"),
             )
-            return [dict(row) for row in cursor.fetchall()]
+            return [self._deserialize_session(row) for row in cursor.fetchall()]
 
     def get_active_sessions_by_date_range(
         self, start_date: datetime, end_date: datetime
-    ) -> List[Dict]:
+    ) -> List[ChatSession]:
         """Get sessions that have messages within the date range"""
         with self.get_connection() as conn:
             cursor = conn.execute(
@@ -195,11 +204,11 @@ class SQLiteChatStorage:
                 GROUP BY s.session_id
                 ORDER BY MAX(m.timestamp) DESC
             """,
-                (start_date, end_date),
+                (format_datetime(start_date), format_datetime(end_date)),
             )
-            return [dict(row) for row in cursor.fetchall()]
+            return [self._deserialize_session(row) for row in cursor.fetchall()]
 
-    def get_session_info(self, session_id: str) -> Dict:
+    def get_session_info(self, session_id: str) -> ChatSession:
         """Get detailed information about a specific session"""
         with self.get_connection() as conn:
             cursor = conn.execute(
@@ -213,47 +222,33 @@ class SQLiteChatStorage:
                 LEFT JOIN messages m ON s.session_id = m.session_id
                 WHERE s.session_id = ?
                 GROUP BY s.session_id
-            """,
+                """,
                 (session_id,),
             )
-            return dict(cursor.fetchone())
+            row = cursor.fetchone()
+            if row:
+                return self._deserialize_session(row)
+            else:
+                raise ValueError(f"No session found with id {session_id}")
 
-    def delete_session(self, session_id: str):
-        """Delete a session and its messages"""
-        with self.get_connection() as conn:
-            conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
-            conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
-
-    def get_recent_sessions(self, limit: int = 10) -> List[Dict]:
+    def get_recent_sessions(self, limit: int = 10) -> List[ChatSession]:
         """Get most recently active sessions"""
         with self.get_connection() as conn:
             cursor = conn.execute(
                 """
-                SELECT session_id, title, created_at, last_active, 
-                        (SELECT COUNT(*) FROM messages WHERE messages.session_id = sessions.session_id) as message_count,
-                        metadata
-                FROM sessions
+                SELECT s.*, 
+                    (SELECT COUNT(*) FROM messages WHERE messages.session_id = s.session_id) as message_count,
+                    (SELECT MIN(timestamp) FROM messages WHERE messages.session_id = s.session_id) as first_message,
+                    (SELECT MAX(timestamp) FROM messages WHERE messages.session_id = s.session_id) as last_message
+                FROM sessions s
                 ORDER BY last_active DESC
                 LIMIT ?
                 """,
                 (limit,),
             )
+            return [self._deserialize_session(row) for row in cursor.fetchall()]
 
-            sessions = []
-            for row in cursor:
-                session = dict(row)
-                # Ensure dates are in correct format
-                session["created_at"] = format_datetime(
-                    parse_datetime(session["created_at"])
-                )
-                session["last_active"] = format_datetime(
-                    parse_datetime(session["last_active"])
-                )
-                sessions.append(session)
-
-        return sessions
-
-    def rename_session(self, session_id: str, new_title: str):
+    def rename_session(self, session_id: str, new_title: str) -> None:
         """Rename a chat session"""
         with self.get_connection() as conn:
             conn.execute(
@@ -262,5 +257,31 @@ class SQLiteChatStorage:
                 SET title = ?, last_active = ?
                 WHERE session_id = ?
             """,
-                (new_title, datetime.now(), session_id),
+                (new_title, format_datetime(datetime.now()), session_id),
             )
+
+    def delete_session(self, session_id: str) -> None:
+        """Delete a session and its messages"""
+        with self.get_connection() as conn:
+            try:
+                # Start a transaction
+                conn.execute("BEGIN TRANSACTION")
+
+                # Delete all messages associated with the session
+                conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+
+                # Delete the session itself
+                result = conn.execute(
+                    "DELETE FROM sessions WHERE session_id = ?", (session_id,)
+                )
+
+                # Check if a session was actually deleted
+                if result.rowcount == 0:
+                    raise ValueError(f"No session found with id {session_id}")
+
+                # Commit the transaction
+                conn.execute("COMMIT")
+            except Exception as e:
+                # If any error occurs, rollback the transaction
+                conn.execute("ROLLBACK")
+                raise e  # Re-raise the exception after rollback

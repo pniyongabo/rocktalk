@@ -1,9 +1,11 @@
+from datetime import datetime
 from typing import List, cast
+
 import streamlit as st
 from langchain.schema import AIMessage, HumanMessage
-from models.interfaces import StorageInterface, LLMInterface
-from datetime import datetime
 from langchain_core.messages.ai import AIMessageChunk
+
+from models.interfaces import ChatMessage, ChatSession, LLMInterface, StorageInterface
 
 
 class ChatInterface:
@@ -36,11 +38,13 @@ class ChatInterface:
         st.session_state.messages.append(human_input)
 
         if st.session_state.current_session_id:
-            # Save user message to storage if we have an existing session, otherwise defer until AI response creates the session
-            st.session_state.storage.save_message(
-                session_id=st.session_state.current_session_id,
-                role="user",
-                content=prompt,
+            # Save user message to storage if we have an existing session
+            self.storage.save_message(
+                ChatMessage(
+                    session_id=st.session_state.current_session_id,
+                    role="user",
+                    content=prompt,
+                )
             )
 
     def _generate_session_title(self, human_message: str, ai_response: str) -> str:
@@ -64,7 +68,6 @@ class ChatInterface:
         return title
 
     def _generate_ai_response(self):
-        # AI response generation logic...
         print("AI: ")
 
         # Generate and display AI response
@@ -98,25 +101,32 @@ class ChatInterface:
                 # Get the human message that started this conversation
                 human_message = st.session_state.messages[-1].content
                 title = self._generate_session_title(human_message, full_response)
-                st.session_state.current_session_id = self.storage.create_session(
+                new_session = ChatSession.create(
                     title=title,
                     subject=title,
                     metadata={"model": "anthropic.claude-3-sonnet-20240229-v1:0"},
                 )
-                # defered saving of message now that we have a title
-                st.session_state.storage.save_message(
-                    session_id=st.session_state.current_session_id,
-                    role="user",
-                    content=human_message,
+                self.storage.store_session(new_session)
+
+                st.session_state.current_session_id = new_session.session_id
+                # Save the initial human message now that we have a session
+                self.storage.save_message(
+                    ChatMessage(
+                        session_id=st.session_state.current_session_id,
+                        role="user",
+                        content=human_message,
+                    )
                 )
 
             st.session_state.messages.append(ai_response)
 
             # Save to storage
             self.storage.save_message(
-                session_id=st.session_state.current_session_id,
-                role="assistant",
-                content=full_response,
+                ChatMessage(
+                    session_id=st.session_state.current_session_id,
+                    role="assistant",
+                    content=full_response,
+                )
             )
 
             message_placeholder.markdown(full_response)
