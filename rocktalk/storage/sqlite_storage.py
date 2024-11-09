@@ -101,7 +101,7 @@ class SQLiteChatStorage:
                 (
                     message.session_id,
                     message.role,
-                    message.content,
+                    json.dumps(message.content),
                     format_datetime(message.created_at),
                     json.dumps(message.metadata),
                 ),
@@ -122,7 +122,7 @@ class SQLiteChatStorage:
         return ChatMessage(
             session_id=row["session_id"],
             role=row["role"],
-            content=row["content"],
+            content=json.loads(row["content"]),
             created_at=parse_datetime(row["timestamp"]),
             metadata=json.loads(row["metadata"]) if row["metadata"] else {},
         )

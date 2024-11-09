@@ -4,12 +4,13 @@ from typing import Any, Dict, List, Optional, Protocol
 
 from langchain.schema import BaseMessage
 from pydantic import BaseModel, Field
+from streamlit_chat_prompt import PromptReturn
 
 
 class ChatMessage(BaseModel):
     session_id: str
     role: str
-    content: str
+    content: str | list[str | dict]
     metadata: Optional[Dict] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.now)
 
