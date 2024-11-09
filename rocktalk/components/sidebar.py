@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from models.interfaces import ChatExport, ChatMessage, ChatSession, StorageInterface
 from utils.date_utils import create_date_masks
 
-from .dialogs import session_settings
+from .dialogs import session_settings, session_upload
 
 
 class Sidebar:
@@ -17,47 +17,19 @@ class Sidebar:
 
     def render(self):
         with st.sidebar:
-
-            with st.form("Session upload form", clear_on_submit=True):
-
-                submitted = st.form_submit_button("UPLOAD!")
-                uploaded_file = st.file_uploader(
-                    "Import Conversation", type=["json"], key="conversation_import"
-                )
-
-                if submitted and uploaded_file is not None:
-                    try:
-                        import_data = ChatExport.model_validate_json(
-                            uploaded_file.getvalue()
-                        )
-                        debug(import_data)
-                        # Create new session
-                        self.storage.store_session(import_data.session)
-
-                        # Import messages
-                        for msg in import_data.messages:
-                            self.storage.save_message(msg)
-
-                        st.success("Conversation imported successfully!")
-                        st.session_state.current_session_id = (
-                            import_data.session.session_id
-                        )
-                        uploaded_file.close()
+            st.title("Chat Sessions")
+            with st.container():
+                col1, col2 = st.columns([0.5, 0.5], gap="small")
+                with col1:
+                    if st.button("New Chat", type="primary"):
+                        st.session_state.messages = []
+                        st.session_state.current_session_id = None
                         st.rerun()
+                with col2:
+                    if st.button("Settings"):
+                        session_upload()
 
-                    except Exception as e:
-                        st.error(f"Error importing conversation: {str(e)}")
-                        raise e
-
-            st.sidebar.title("Chat Sessions")
-            self._render_new_chat_button()
             self._render_session_list()
-
-    def _render_new_chat_button(self):
-        if st.sidebar.button("New Chat", type="primary"):
-            st.session_state.messages = []
-            st.session_state.current_session_id = None
-            st.rerun()
 
     def _render_session_list(self):
         # Get recent sessions

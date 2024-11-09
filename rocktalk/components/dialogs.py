@@ -9,6 +9,36 @@ from models.interfaces import ChatMessage, ChatExport
 from datetime import datetime
 
 
+@st.dialog("Session upload")
+def session_upload():
+    with st.form("Session upload form", clear_on_submit=True):
+
+        submitted = st.form_submit_button("UPLOAD!")
+        uploaded_file = st.file_uploader(
+            "Import Conversation", type=["json"], key="conversation_import"
+        )
+
+        if submitted and uploaded_file is not None:
+            try:
+                import_data = ChatExport.model_validate_json(uploaded_file.getvalue())
+                debug(import_data)
+                # Create new session
+                st.session_state.storage.store_session(import_data.session)
+
+                # Import messages
+                for msg in import_data.messages:
+                    st.session_state.storage.save_message(msg)
+
+                st.success("Conversation imported successfully!")
+                st.session_state.current_session_id = import_data.session.session_id
+                uploaded_file.close()
+                st.rerun()
+
+            except Exception as e:
+                st.error(f"Error importing conversation: {str(e)}")
+                raise e
+
+
 @st.dialog("Session settings")
 def session_settings(df_session: pd.Series):
     st.markdown("### Session Options")
