@@ -8,8 +8,7 @@ from pydantic import BaseModel
 from models.interfaces import ChatExport, ChatMessage, ChatSession, StorageInterface
 from utils.date_utils import create_date_masks
 
-from .dialogs import open_text_dialog, upload_dialog
-from .session_modal import session_settings
+from .dialogs import session_settings
 
 
 class Sidebar:
@@ -18,31 +17,6 @@ class Sidebar:
 
     def render(self):
         with st.sidebar:
-
-            file_upload = st.button("Open file upload", type="primary")
-            if file_upload:
-                upload_dialog()
-
-            text_box_button = st.button("Open text box", type="primary")
-            if text_box_button:
-                open_text_dialog()
-
-            if st.session_state.current_session_id:
-                session_id: str = st.session_state.current_session_id
-                messages = self.storage.get_session_messages(session_id)
-                session = self.storage.get_session_info(session_id)
-
-                export_data = ChatExport(
-                    session=session, messages=messages, exported_at=datetime.now()
-                )
-
-                # Create download button
-                st.download_button(
-                    label="Download Conversation",
-                    data=export_data.model_dump_json(indent=2),
-                    file_name=f"conversation_{session_id}.json",
-                    mime="application/json",
-                )
 
             with st.form("Session upload form", clear_on_submit=True):
 
