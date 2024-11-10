@@ -10,7 +10,18 @@ import base64
 from io import BytesIO
 from PIL import ImageFile, Image
 
-MAX_IMAGE_WIDTH = 300
+class TurnState(Enum):
+    """Enum representing the current turn state in the conversation.
+
+    Attributes:
+        HUMAN_TURN: Waiting for human input.
+        AI_TURN: Waiting for AI response.
+        COMPLETE: Conversation is complete.
+    """
+
+    HUMAN_TURN = "human_turn"
+    AI_TURN = "ai_turn"
+    COMPLETE = "complete"
 
 
 class ChatInterface:
@@ -29,6 +40,8 @@ class ChatInterface:
     def __init__(self, storage: StorageInterface, llm: LLMInterface):
         self.storage = storage
         self.llm = llm
+        if "turn_state" not in st.session_state:
+            st.session_state.turn_state = TurnState.HUMAN_TURN
         if "messages" not in st.session_state:
             st.session_state.messages = []  # List[ChatMessage]
         if "current_session_id" not in st.session_state:
@@ -39,46 +52,12 @@ class ChatInterface:
         Render the chat interface, displaying chat history and handling user input.
         """
         self._display_chat_history()
-        self._handle_chat_input()
 
-    def _display_chat_history(self):
-        """
-        Display the chat history in the Streamlit interface.
-        """
-        for message in st.session_state.messages:
-            with st.chat_message(message.additional_kwargs["role"]):
-                if isinstance(message.content, str):
-                    st.markdown(message.content)
-                elif isinstance(message.content, list):
-                    for item in message.content:
-                        if isinstance(item, str):
-                            st.markdown(item)
-                        elif isinstance(item, dict):
-                            if "type" in item:
-                                if item["type"] == "text":
-                                    st.markdown(item["text"])
-                                elif item["type"] == "image":
-                                    pil_image = self._image_from_b64_image(
-                                        item["source"]["data"]
-                                    )
-                                    width, height = pil_image.size
-                                    st.image(
-                                        pil_image, width=min(width, MAX_IMAGE_WIDTH)
-                                    )
-                            else:
-                                # just display the dict if format unknown
-                                st.json(item)
-                        else:
-                            st.write(item)  # Fallback for unexpected types
-                else:
-                    st.write(message.content)  # Fallback for unexpected content type
+        if st.session_state.turn_state == TurnState.HUMAN_TURN:
+            self._handle_chat_input()
+        elif st.session_state.turn_state == TurnState.AI_TURN:
+            self._generate_ai_response()
 
-    def _handle_chat_input(self):
-        """
-        Handle user input from the chat interface.
-        """
-        user_input = prompt("chat_input", key="user_input", placeholder="Hello!")
-        # user_input = st.chat_input("chat_input", key="input")
         if user_input:
             self._process_user_input(user_input)
             self._generate_ai_response()
@@ -157,58 +136,9 @@ class ChatInterface:
 
         # If there's an active chat session, save the user's message to storage
         if st.session_state.current_session_id:
-            self.storage.save_message(
-                ChatMessage(
-                    session_id=st.session_state.current_session_id,
-                    role="user",
-                    content=content,
-                )
-            )
 
-    def _generate_session_title(self, human_message: str, ai_response: str) -> str:
-        """
-        Generate a concise session title using the LLM with full conversation context.
-
-        Args:
-            human_message (str): The initial message from the human user.
-            ai_response (str): The AI's response to the human message.
-
-        Returns:
-            str: A concise title for the chat session, typically 2-4 words long.
-
-        This method uses the language model to create a brief summary of the conversation
-        topic, which is then used as the title for the chat session. If the LLM fails to
-        generate a valid title, it falls back to using a timestamp.
-        """
-        title_prompt = HumanMessage(
-            content=f"""Summarize this conversation's topic in up to 5 words or about 40 characters. More details are useful, but space is limited to show this summary, so ideally 2-4 words.
-            Be direct and concise, no explanations needed.
-            
-            Conversation:
-            Human: {human_message}
-            Assistant: {ai_response}"""
-        )
-
-        title = self.llm.invoke([title_prompt]).content.strip('" \n').strip()
-
-        # Fallback to timestamp if we get an empty or invalid response
-        if not title:
-            title = f"Chat {datetime.now()}"
-
-        print(f"New session title: {title}")
-        return title
-
-    def _generate_ai_response(self):
-        """
-        Generate and display an AI response based on the current chat session.
-
-        This method streams the AI's response, displays it in the chat interface,
-        creates a new chat session if necessary, and saves the response to storage.
-
-        Returns:
-            None
-        """
-        print("AI: ")
+        # Set state for AI to respond
+        st.session_state.turn_state = TurnState.AI_TURN
 
         # Generate and display AI response
         with st.chat_message("assistant"):
@@ -271,7 +201,8 @@ class ChatInterface:
 
             message_placeholder.markdown(full_response)
 
-            # Update last_update timestamp
+            # Update state for next human input
+            st.session_state.turn_state = TurnState.HUMAN_TURN
             st.session_state.last_update = datetime.now()
 
             # Now rerun after the complete conversation turn is saved
