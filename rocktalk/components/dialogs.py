@@ -1,16 +1,28 @@
-import streamlit as st
-
+from datetime import datetime
 from typing import List
 
 import pandas as pd
 import streamlit as st
 from devtools import debug
-from models.interfaces import ChatMessage, ChatExport
-from datetime import datetime
+from models.interfaces import ChatExport, ChatMessage
 
 
-@st.dialog("Session upload")
-def session_upload():
+@st.dialog("Interface Options")
+def interface_options():
+    # TODO: WIP code to delete all sessions
+    with st.form("Reset button", clear_on_submit=False):
+        st.warning("⚠️ This will delete ALL sessions and messages!")
+        if st.form_submit_button("Reset All Data"):
+            if st.session_state.get("confirm_reset", False):
+                st.session_state.storage.delete_all_sessions()
+                st.session_state.current_session_id = None
+                st.session_state.messages = []
+                st.rerun()
+            else:
+                st.session_state["confirm_reset"] = True
+                st.warning("Click again to confirm reset")
+
+    st.divider()
     with st.form("Session upload form", clear_on_submit=True):
 
         submitted = st.form_submit_button("UPLOAD!")

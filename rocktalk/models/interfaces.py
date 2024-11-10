@@ -2,9 +2,12 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Protocol
 
-from langchain.schema import BaseMessage
+from PIL.ImageFile import ImageFile
+from langchain.schema import AIMessage, BaseMessage, HumanMessage
 from pydantic import BaseModel, Field
 from streamlit_chat_prompt import PromptReturn
+import streamlit as st
+from utils.image_utils import image_from_b64_image, MAX_IMAGE_WIDTH
 
 
 class ChatMessage(BaseModel):
@@ -14,11 +17,78 @@ class ChatMessage(BaseModel):
     metadata: Optional[Dict] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.now)
 
+    def display(self) -> None:
+        with st.chat_message(self.role):
+            if isinstance(self.content, str):
+                st.markdown(self.content)
+            elif isinstance(self.content, list):
+                for item in self.content:
+                    if isinstance(item, dict):
+                        if item["type"] == "text":
+                            st.markdown(item["text"])
+                        elif item["type"] == "image":
+                            pil_image: ImageFile = image_from_b64_image(
+                                item["source"]["data"]
+                            )
+                            width: int = pil_image.size[0]
+                            st.image(image=pil_image, width=min(width, MAX_IMAGE_WIDTH))
+                    else:
+                        st.markdown(str(item))
+
+    def convert_to_llm_message(self) -> BaseMessage:
+        """Convert ChatMessage to LangChain message format.
+
+        Args:
+            message: ChatMessage to convert.
+
+        Returns:
+            LangChain message object (either HumanMessage or AIMessage).
+        """
+        if self.role == "user":
+            return HumanMessage(
+                content=self.content, additional_kwargs={"role": "user"}
+            )
+        elif self.role == "assistant":
+            return AIMessage(
+                content=self.content, additional_kwargs={"role": "assistant"}
+            )
+        raise ValueError(f"Unsupported message role: {self.role}")
+
+    @staticmethod
+    def create_from_prompt(
+        user_input: PromptReturn, session_id: Optional[str] = None
+    ) -> "ChatMessage":
+        """Create ChatMessage from user input.
+
+        Args:
+            user_input: User input containing message and optional images.
+            session_id: Optional session ID for the message.
+
+        Returns:
+            ChatMessage object containing the user input.
+        """
+        content = []
+        if user_input.message:
+            content.append({"type": "text", "text": user_input.message})
+        if user_input.images:
+            for image in user_input.images:
+                content.append(
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": image.format,
+                            "media_type": image.type,
+                            "data": image.data,
+                        },
+                    }
+                )
+
+        return ChatMessage(session_id=session_id or "", role="user", content=content)
+
 
 class ChatSession(BaseModel):
     session_id: str
     title: str
-    subject: Optional[str] = None
     metadata: Optional[Dict] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.now)
     last_active: datetime = Field(default_factory=datetime.now)
@@ -26,11 +96,9 @@ class ChatSession(BaseModel):
     first_message: Optional[datetime] = None
     last_message: Optional[datetime] = None
 
-    @classmethod
+    @staticmethod
     def create(
-        self,
         title: str,
-        subject: Optional[str] = None,
         metadata: Optional[Dict] = None,
         created_at: Optional[datetime] = None,
         last_active: Optional[datetime] = None,
@@ -44,7 +112,6 @@ class ChatSession(BaseModel):
         return ChatSession(
             session_id=session_id,
             title=title,
-            subject=subject,
             metadata=metadata or {},
             created_at=created_at,
             last_active=last_active,
@@ -55,50 +122,3 @@ class ChatExport(BaseModel):
     session: ChatSession
     messages: List[ChatMessage]
     exported_at: datetime = Field(default_factory=datetime.now)
-
-
-class StorageInterface(Protocol):
-    """Protocol defining the interface for chat storage implementations"""
-
-    def store_session(self, session: ChatSession) -> None:
-        """Store a new chat session"""
-        ...
-
-    def save_message(self, message: ChatMessage) -> None:
-        """Save a message to a chat session"""
-        ...
-
-    def get_session_messages(self, session_id: str) -> List[ChatMessage]:
-        """Get all messages for a session"""
-        ...
-
-    def search_sessions(self, query: str) -> List[ChatSession]:
-        """Search sessions by content, title, or subject"""
-        ...
-
-    def get_active_sessions_by_date_range(
-        self, start_date: datetime, end_date: datetime
-    ) -> List[ChatSession]:
-        """Get sessions that have messages within the date range"""
-        ...
-
-    def get_session_info(self, session_id: str) -> ChatSession:
-        """Get detailed information about a specific session"""
-        ...
-
-    def delete_session(self, session_id: str) -> None:
-        """Delete a session and its messages"""
-        ...
-
-    def get_recent_sessions(self, limit: int = 10) -> List[ChatSession]:
-        """Get most recently active sessions"""
-        ...
-
-    def rename_session(self, session_id: str, new_title: str) -> None:
-        """Rename a chat session"""
-        ...
-
-
-class LLMInterface(Protocol):
-    def stream(self, messages: List[BaseMessage]) -> Any: ...
-    def invoke(self, messages: List[BaseMessage]) -> Any: ...

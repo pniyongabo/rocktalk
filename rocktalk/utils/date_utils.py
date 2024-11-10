@@ -1,8 +1,7 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Tuple
 
 import pandas as pd
-
 from models.interfaces import ChatSession
 
 DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"

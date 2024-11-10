@@ -1,24 +1,21 @@
 import json
 import sqlite3
-import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
-
-from devtools import debug
+from typing import List
 
 from models.interfaces import ChatMessage, ChatSession
 from utils.datetime_utils import format_datetime, parse_datetime
 
 
 class SQLiteChatStorage:
-    def __init__(self, db_path: str = "chat_database.db"):
+    def __init__(self, db_path: str = "chat_database.db") -> None:
         # Ensure database directory exists
         Path(db_path).parent.mkdir(exist_ok=True, parents=True)
         self.db_path = db_path
         self.init_db()
 
-    def get_connection(self):
+    def get_connection(self) -> sqlite3.Connection:
         """Create a new connection with row factory for dict results"""
         try:
             # Connect to database (creates file if it doesn't exist)
@@ -30,7 +27,7 @@ class SQLiteChatStorage:
                 f"Failed to connect to database at {self.db_path}: {str(e)}"
             )
 
-    def init_db(self):
+    def init_db(self) -> None:
         """Initialize database schema"""
         with self.get_connection() as conn:
             conn.executescript(
@@ -38,7 +35,6 @@ class SQLiteChatStorage:
                 CREATE TABLE IF NOT EXISTS sessions (
                     session_id TEXT PRIMARY KEY,
                     title TEXT NOT NULL,
-                    subject TEXT,
                     created_at TIMESTAMP NOT NULL,  -- Using TIMESTAMP type
                     last_active TIMESTAMP NOT NULL, -- Using TIMESTAMP type
                     metadata TEXT
@@ -69,21 +65,20 @@ class SQLiteChatStorage:
             """
             )
 
-    def store_session(self, session: ChatSession):
+    def store_session(self, session: ChatSession) -> ChatSession:
 
         with self.get_connection() as conn:
             conn.execute(
                 """
                 INSERT INTO sessions 
-                (session_id, title, created_at, last_active, subject, metadata)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (session_id, title, created_at, last_active, metadata)
+                VALUES (?, ?, ?, ?, ?)
             """,
                 (
                     session.session_id,
                     session.title,
                     format_datetime(session.created_at),
                     format_datetime(session.last_active),
-                    session.subject,
                     json.dumps(session.metadata),
                 ),
             )
@@ -133,7 +128,6 @@ class SQLiteChatStorage:
         return ChatSession(
             session_id=session_data["session_id"],
             title=session_data["title"],
-            subject=session_data["subject"],
             created_at=parse_datetime(session_data["created_at"]),
             last_active=parse_datetime(session_data["last_active"]),
             metadata=(
@@ -166,7 +160,7 @@ class SQLiteChatStorage:
             return [self._deserialize_message(row) for row in cursor.fetchall()]
 
     def search_sessions(self, query: str) -> List[ChatSession]:
-        """Search sessions by content, title, or subject"""
+        """Search sessions by content or title"""
         with self.get_connection() as conn:
             cursor = conn.execute(
                 """
@@ -178,7 +172,6 @@ class SQLiteChatStorage:
                 LEFT JOIN messages m ON s.session_id = m.session_id
                 WHERE m.content LIKE ?
                 OR s.title LIKE ?
-                OR s.subject LIKE ?
                 GROUP BY s.session_id
                 ORDER BY MAX(m.timestamp) DESC NULLS LAST
             """,
@@ -285,3 +278,23 @@ class SQLiteChatStorage:
                 # If any error occurs, rollback the transaction
                 conn.execute("ROLLBACK")
                 raise e  # Re-raise the exception after rollback
+
+    def delete_all_sessions(self) -> None:
+        """Delete all chat sessions and their messages"""
+        with self.get_connection() as conn:
+            try:
+                # Start a transaction
+                conn.execute("BEGIN TRANSACTION")
+
+                # Delete all messages first (due to foreign key constraint)
+                conn.execute("DELETE FROM messages")
+
+                # Delete all sessions
+                conn.execute("DELETE FROM sessions")
+
+                # Commit the transaction
+                conn.execute("COMMIT")
+            except Exception as e:
+                # If any error occurs, rollback the transaction
+                conn.execute("ROLLBACK")
+                raise RuntimeError(f"Failed to delete all sessions: {str(e)}")

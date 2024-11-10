@@ -1,9 +1,8 @@
 import dotenv
 import streamlit as st
-from langchain_aws import ChatBedrockConverse
-
 from components.chat import ChatInterface
 from components.sidebar import Sidebar
+from langchain_aws import ChatBedrockConverse
 from storage.sqlite_storage import SQLiteChatStorage
 
 # Load environment variables

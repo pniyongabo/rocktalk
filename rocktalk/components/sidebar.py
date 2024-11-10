@@ -1,14 +1,8 @@
-from datetime import datetime
-
 import streamlit as st
-from devtools import debug
-from langchain.schema import AIMessage, HumanMessage
-from pydantic import BaseModel
-
-from models.interfaces import ChatExport, ChatMessage, ChatSession, StorageInterface
+from storage.storage_interface import StorageInterface
 from utils.date_utils import create_date_masks
 
-from .dialogs import session_settings, session_upload
+from .dialogs import interface_options, session_settings
 
 
 class Sidebar:
@@ -27,7 +21,7 @@ class Sidebar:
                         st.rerun()
                 with col2:
                     if st.button("Settings"):
-                        session_upload()
+                        interface_options()
 
             self._render_session_list()
 
@@ -64,20 +58,11 @@ class Sidebar:
                                     messages = self.storage.get_session_messages(
                                         df_session["session_id"]
                                     )
-                                    st.session_state.messages = [
-                                        (
-                                            HumanMessage(
-                                                content=msg.content,
-                                                additional_kwargs={"role": "user"},
-                                            )
-                                            if msg.role == "user"
-                                            else AIMessage(
-                                                content=msg.content,
-                                                additional_kwargs={"role": "assistant"},
-                                            )
+                                    st.session_state.messages = (
+                                        self.storage.get_session_messages(
+                                            df_session["session_id"]
                                         )
-                                        for msg in messages
-                                    ]
+                                    )
                                     st.rerun()
 
                             with col2:

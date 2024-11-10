@@ -1,14 +1,19 @@
+"""Chat interface module for handling user-AI conversations with support for text and images."""
+
 from datetime import datetime
 from enum import Enum
+from typing import Any, Optional, cast
 
 import streamlit as st
-from langchain.schema import AIMessage, HumanMessage
-from langchain_core.messages.ai import AIMessageChunk
-from streamlit_chat_prompt import prompt, PromptReturn
-from models.interfaces import ChatMessage, ChatSession, LLMInterface, StorageInterface
-import base64
-from io import BytesIO
-from PIL import ImageFile, Image
+import streamlit.components.v1 as components
+from langchain.schema import HumanMessage, BaseMessage
+from models.interfaces import ChatMessage, ChatSession
+from models.llm import LLMInterface
+from storage.storage_interface import StorageInterface
+from streamlit_chat_prompt import PromptReturn, prompt
+
+MODEL = "anthropic.claude-3-sonnet-20240229-v1:0"
+
 
 class TurnState(Enum):
     """Enum representing the current turn state in the conversation.
@@ -55,169 +60,159 @@ class ChatInterface:
         """Render the chat interface and handle the current turn state."""
         self._display_chat_history()
 
-        if st.session_state.turn_state == TurnState.HUMAN_TURN:
-            self._handle_chat_input()
-        elif st.session_state.turn_state == TurnState.AI_TURN:
-            self._generate_ai_response()
+        # if st.session_state.turn_state == TurnState.HUMAN_TURN:
+        self._handle_chat_input()
+        self._generate_ai_response()
 
-        if user_input:
-            self._process_user_input(user_input)
-            self._generate_ai_response()
+    def _scroll_to_bottom(self) -> None:
+        """Scrolls to the bottom of the chat interface.
 
-    def _image_from_b64_image(self, b64_image: str) -> ImageFile.ImageFile:
+        This method inserts a div element at the bottom of the chat and uses JavaScript
+        to scroll to it, ensuring the most recent messages are visible.
         """
-        Convert a base64-encoded image string to a PIL Image object.
+        index = st.session_state.scroll_div_index
+        st.markdown(f"""<div id="end-of-chat-{index}"></div>""", unsafe_allow_html=True)
 
-        Args:
-            b64_image (str): Base64-encoded image string.
-        Returns:
-            ImageFile.ImageFile: PIL Image object.
-        """
-        image_data: bytes = base64.b64decode(b64_image)
-        image: ImageFile.ImageFile = Image.open(BytesIO(image_data))
-        return image
-
-    def _prepare_content_from_user_input(self, user_input: PromptReturn) -> List[dict]:
-        """
-        Prepare content from user input for processing.
-
-        Args:
-            user_input (PromptReturn): User input object containing message and images.
-
-        Returns:
-            List[dict]: Prepared content as a list of dictionaries.
-        """
-        content = []
-        if user_input.message:
-            content.append({"type": "text", "text": user_input.message})
-        for image in user_input.images:
-            content.append(
-                {
-                    "type": "image",
-                    "source": {
-                        "type": image.format,
-                        "media_type": image.type,
-                        "data": image.data,
-                    },
+        js = (
+            """
+        <script>
+            function scrollToBottom() {
+                // Break out of iframe and get the main window
+                const mainWindow = window.parent;
+                const endMarker = mainWindow.document.getElementById('"""
+            + f"""end-of-chat-{index}"""
+            + """');
+                
+                if (endMarker) {
+                    endMarker.scrollIntoView({ 
+                        behavior: 'smooth',
+                        block: 'end'
+                    });
+                } else {
+                    // Fallback to scrolling the whole window
+                    mainWindow.scrollTo({
+                        top: mainWindow.document.documentElement.scrollHeight,
+                        behavior: 'smooth'
+                    });
                 }
-            )
-        return content
-
-    def _process_user_input(self, user_input: PromptReturn):
+            }
+            
+            // Call immediately and after a short delay to ensure content is loaded
+            scrollToBottom();
+            setTimeout(scrollToBottom, 100);
+        </script>
         """
-        Process user input, display it in the chat interface, and save it to storage.
+        )
 
-        Args:
-            user_input (PromptReturn): User input object containing message and images.
+        components.html(js, height=0)
+
+    def _display_chat_history(self) -> None:
+        """Display the chat history in the Streamlit interface."""
+
+        for message in st.session_state.messages:
+            message.display()
+
+        st.session_state.scroll_div_index = 0
+        self._scroll_to_bottom()
+
+    def _handle_chat_input(self) -> None:
+        """Handle user input from the chat interface.
+
+        Gets input from the chat prompt and processes it if provided.
         """
-        print(f"\nHuman: {user_input}")
+        user_input: Optional[PromptReturn] = prompt(
+            "chat_input", key="user_input", placeholder="Hello!"
+        )  # TODO: add disabled if not users turn
 
-        # Display user message and images in the Streamlit chat interface
-        with st.chat_message("user"):
-            # Display the text message
-            st.markdown(user_input.message)
-
-            # Display any images uploaded by the user
-            for image in user_input.images:
-                pil_image = self._image_from_b64_image(image.data)
-                width, _height = pil_image.size
-                # Limit the display width of the image
-                st.image(
-                    pil_image,
-                    width=min(MAX_IMAGE_WIDTH, width),
+        if st.session_state.turn_state == TurnState.HUMAN_TURN:
+            if user_input:
+                human_message = ChatMessage.create_from_prompt(
+                    user_input=user_input,
+                    session_id=st.session_state.current_session_id,
                 )
 
-        # Prepare the content for the LLM, including both text and images
-        content = self._prepare_content_from_user_input(user_input)
+                human_message.display()
+                st.session_state.scroll_div_index += 1
+                self._scroll_to_bottom()
 
-        # Create a HumanMessage object with the prepared content
-        human_input = HumanMessage(content=content, additional_kwargs={"role": "user"})
+                # Save to storage if we have a session, otherwise save later after session title is generated
+                if st.session_state.current_session_id:
+                    self.storage.save_message(message=human_message)
 
-        # Add the user's message to the session state
-        st.session_state.messages.append(human_input)
+                st.session_state.messages.append(human_message)
 
-        # If there's an active chat session, save the user's message to storage
-        if st.session_state.current_session_id:
+                # Set state for AI to respond
+                st.session_state.turn_state = TurnState.AI_TURN
 
-        # Set state for AI to respond
-        st.session_state.turn_state = TurnState.AI_TURN
+    def _convert_messages_to_llm_format(self) -> list[BaseMessage]:
+        """Convert stored ChatMessages to LLM format.
 
-        # Generate and display AI response
-        with st.chat_message("assistant"):
-            message_placeholder = st.empty()
-            full_response = ""
+        Returns:
+            List of BaseMessage objects in LLM format.
+        """
+        return [msg.convert_to_llm_message() for msg in st.session_state.messages]
 
-            for chunk in st.session_state.llm.stream(st.session_state.messages):
-                chunk = cast(AIMessageChunk, chunk)
-                for item in chunk.content:
-                    if isinstance(item, dict) and "text" in item:
-                        text = item["text"]
-                        full_response += text
-                        print(text, end="", flush=True)
+    def _generate_ai_response(self) -> None:
+        """Generate and display an AI response."""
 
-                    message_placeholder.markdown(full_response + "▌")
+        if st.session_state.turn_state == TurnState.AI_TURN:
 
-                if chunk.response_metadata:
-                    print(chunk.response_metadata)
-                if chunk.usage_metadata:
-                    print(type(chunk))
-                    print(chunk.usage_metadata)
+            # Convert messages to LLM format
+            llm_messages: list[BaseMessage] = self._convert_messages_to_llm_format()
 
-            # Save AI response
-            ai_response = AIMessage(
-                content=full_response, additional_kwargs={"role": "assistant"}
-            )
+            # Generate and display AI response
+            with st.chat_message("assistant"):
+                message_placeholder = st.empty()
+                full_response = ""
+                # st.session_state.scroll_div_index += 1
+                # self._scroll_to_bottom()
+                for chunk in self.llm.stream(input=llm_messages):
+                    for item in chunk.content:
+                        if isinstance(item, dict) and "text" in item:
+                            text = item["text"]
+                            full_response += text
+                        message_placeholder.markdown(full_response + "▌")
 
-            # Create new session if none exists
-            if not st.session_state.current_session_id:
-                # Get the human message that started this conversation
-                human_message = st.session_state.messages[-1].content
-                title = self._generate_session_title(human_message, full_response)
-                new_session = ChatSession.create(
-                    title=title,
-                    subject=title,
-                    metadata={"model": "anthropic.claude-3-sonnet-20240229-v1:0"},
-                )
-                self.storage.store_session(new_session)
+                message_placeholder.markdown(full_response)
 
-                st.session_state.current_session_id = new_session.session_id
-                # Save the initial human message now that we have a session
-                self.storage.save_message(
+                # Create ChatMessage
+                st.session_state.messages.append(
                     ChatMessage(
-                        session_id=st.session_state.current_session_id,
-                        role="user",
-                        content=human_message,
+                        session_id=st.session_state.current_session_id or "",
+                        role="assistant",
+                        content=full_response,
                     )
                 )
 
-            st.session_state.messages.append(ai_response)
+                # Create new session if none exists
+                if not st.session_state.current_session_id:
+                    title: str = self._generate_session_title()
+                    new_session: ChatSession = ChatSession.create(
+                        title=title,
+                        metadata={
+                            "model": MODEL
+                        },  # TODO use metadata from app settings?
+                    )
+                    self.storage.store_session(session=new_session)
 
-            # Save to storage
-            self.storage.save_message(
-                ChatMessage(
-                    session_id=st.session_state.current_session_id,
-                    role="assistant",
-                    content=full_response,
-                )
-            )
+                    st.session_state.current_session_id = new_session.session_id
 
-            message_placeholder.markdown(full_response)
+                    # Update session_id for all messages and save
+                    for msg in st.session_state.messages:
+                        msg.session_id = new_session.session_id
 
-            # Update state for next human input
-            st.session_state.turn_state = TurnState.HUMAN_TURN
-            st.session_state.last_update = datetime.now()
+                    # save to storage the original human message we didn't save initially
+                    self.storage.save_message(message=st.session_state.messages[-2])
 
-            # Now rerun after the complete conversation turn is saved
-            st.rerun()
+                # Save AI message
+                self.storage.save_message(message=st.session_state.messages[-1])
 
-    def _generate_session_title(
-        self, human_message: ChatMessage, ai_message: ChatMessage
-    ) -> str:
+                # Update state for next human input
+                st.session_state.turn_state = TurnState.HUMAN_TURN
+                st.rerun()
+
+    def _generate_session_title(self) -> str:
         """Generate a concise session title using the LLM.
-
-        Args:
-            human_message: The human's ChatMessage.
-            ai_message: The AI's ChatMessage.
 
         Returns:
             A concise title for the chat session (2-4 words).
@@ -225,24 +220,22 @@ class ChatInterface:
         Note:
             Falls back to timestamp-based title if LLM fails to generate one.
         """
-        # Extract text content from messages
-        human_text = next(
-            (item["text"] for item in human_message.content if item["type"] == "text"),
-            "",
-        )
-        ai_text = ai_message.content if isinstance(ai_message.content, str) else ""
 
         title_prompt: HumanMessage = HumanMessage(
             content=f"""Summarize this conversation's topic in up to 5 words or about 40 characters. 
             More details are useful, but space is limited to show this summary, so ideally 2-4 words.
-            Be direct and concise, no explanations needed. If there are missing messages, do the best you can to keep the summary short.    
-            
-            Conversation:
-            Human: {human_text or "No human message."}
-            Assistant: {ai_text}"""
+            Be direct and concise, no explanations needed. If there are missing messages, do the best you can to keep the summary short."""
         )
-        print(title_prompt)
-        title: str = self.llm.invoke([title_prompt]).content.strip('" \n').strip()
+        title_response: BaseMessage = self.llm.invoke(
+            [*self._convert_messages_to_llm_format(), title_prompt]
+        )
+        title_content: str | list[str | dict] = title_response.content
+
+        if isinstance(title_content, str):
+            title: str = title_content.strip('" \n').strip()
+        else:
+            print(f"Unexpected generated title response: {title_content}")
+            return f"Chat {datetime.now()}"
 
         # Fallback to timestamp if we get an empty or invalid response
         if not title:
