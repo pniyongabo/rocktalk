@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, cast
+from enum import Enum
 
 import streamlit as st
 from langchain.schema import AIMessage, HumanMessage
@@ -25,19 +25,23 @@ class TurnState(Enum):
 
 
 class ChatInterface:
-    """
-    A class to handle the chat interface, including displaying chat history and processing user input.
+    """Interface for managing chat interactions between users and AI.
 
-    Args:
-        storage (StorageInterface): An interface for storing chat data.
-        llm (LLMInterface): An interface for the language model.
+    This class handles the display of chat history, processing of user input,
+    generation of AI responses, and management of chat sessions.
 
     Attributes:
-        storage (StorageInterface): The storage interface instance.
-        llm (LLMInterface): The language model interface instance.
+        storage (StorageInterface): Interface for persistent storage of chat data.
+        llm (LLMInterface): Interface for the language model providing AI responses.
     """
 
-    def __init__(self, storage: StorageInterface, llm: LLMInterface):
+    def __init__(self, storage: StorageInterface, llm: LLMInterface) -> None:
+        """Initialize the chat interface.
+
+        Args:
+            storage: Storage interface for persisting chat data.
+            llm: Language model interface for generating responses.
+        """
         self.storage = storage
         self.llm = llm
         if "turn_state" not in st.session_state:
@@ -47,10 +51,8 @@ class ChatInterface:
         if "current_session_id" not in st.session_state:
             st.session_state.current_session_id = None  # str
 
-    def render(self):
-        """
-        Render the chat interface, displaying chat history and handling user input.
-        """
+    def render(self) -> None:
+        """Render the chat interface and handle the current turn state."""
         self._display_chat_history()
 
         if st.session_state.turn_state == TurnState.HUMAN_TURN:
@@ -71,8 +73,8 @@ class ChatInterface:
         Returns:
             ImageFile.ImageFile: PIL Image object.
         """
-        image_data = base64.b64decode(b64_image)
-        image = Image.open(BytesIO(image_data))
+        image_data: bytes = base64.b64decode(b64_image)
+        image: ImageFile.ImageFile = Image.open(BytesIO(image_data))
         return image
 
     def _prepare_content_from_user_input(self, user_input: PromptReturn) -> List[dict]:
