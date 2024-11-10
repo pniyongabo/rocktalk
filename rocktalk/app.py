@@ -1,14 +1,9 @@
-from datetime import datetime
-from typing import cast
-
 import dotenv
 import streamlit as st
-from langchain.schema import AIMessage, HumanMessage
 from langchain_aws import ChatBedrockConverse
 
 from components.chat import ChatInterface
 from components.sidebar import Sidebar
-from models.interfaces import StorageInterface
 from storage.sqlite_storage import SQLiteChatStorage
 
 # Load environment variables
@@ -20,13 +15,10 @@ st.subheader("RockTalk: Powered by AWS Bedrock 🪨 + LangChain 🦜️🔗 + St
 
 # Initialize storage in session state
 if "storage" not in st.session_state:
-    st.session_state.storage: StorageInterface = SQLiteChatStorage(
+    st.session_state.storage = SQLiteChatStorage(
         db_path="chat_database.db"
-    )
+    )  # StorageInterface
     print("--- Storage initialized ---")
-
-if "additional_text" not in st.session_state:
-    st.session_state.additional_text = None
 
 # Initialize LLM object in session state
 if "llm" not in st.session_state:
