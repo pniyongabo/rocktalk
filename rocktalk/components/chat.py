@@ -106,6 +106,69 @@ class ChatInterface:
 
         components.html(js, height=0)
 
+    def _scroll_to_bottom_streaming(self) -> None:
+        """Automatically scrolls the chat window during streaming responses.
+
+        This method adds a JavaScript script that handles auto-scrolling behavior during
+        message streaming. The scrolling continues until the user manually scrolls,
+        at which point auto-scrolling is disabled to respect user control.
+
+        The script implements the following features:
+            - Detects user scroll events (both wheel and touch)
+            - Automatically scrolls to the latest message every 100ms
+            - Stops auto-scrolling if user manually scrolls
+            - Automatically cleans up after 30 seconds
+
+        The scrolling behavior is implemented using smooth scrolling for better user
+        experience and targets the last markdown element in the chat window.
+        """
+        # Add scroll script with user interaction detection
+        js = """
+        <script>
+            let userHasScrolled = false;
+            let scrollInterval;
+
+            // Detect user scroll
+            window.parent.addEventListener('wheel', function() {
+                userHasScrolled = true;
+                if (scrollInterval) {
+                    clearInterval(scrollInterval);
+                }
+            }, { passive: true });
+
+            window.parent.addEventListener('touchmove', function() {
+                userHasScrolled = true;
+                if (scrollInterval) {
+                    clearInterval(scrollInterval);
+                }
+            }, { passive: true });
+
+            function keepInView() {
+                if (!userHasScrolled) {
+                    const markdowns = window.parent.document.querySelectorAll('.stMarkdown');
+                    if (markdowns.length > 0) {
+                        const lastMarkdown = markdowns[markdowns.length - 1];
+                        lastMarkdown.scrollIntoView({ 
+                            behavior: 'smooth', 
+                            block: 'end' 
+                        });
+                    }
+                }
+            }
+            
+            // Start auto-scroll only if user hasn't manually scrolled
+            scrollInterval = setInterval(keepInView, 100);
+            
+            // Clear interval after 30 seconds as a safety measure
+            setTimeout(() => {
+                if (scrollInterval) {
+                    clearInterval(scrollInterval);
+                }
+            }, 30000);
+        </script>
+        """
+        components.html(js, height=0)
+
     def _display_chat_history(self) -> None:
         """Display the chat history in the Streamlit interface."""
 
@@ -164,8 +227,7 @@ class ChatInterface:
             with st.chat_message("assistant"):
                 message_placeholder = st.empty()
                 full_response = ""
-                # st.session_state.scroll_div_index += 1
-                # self._scroll_to_bottom()
+                self._scroll_to_bottom_streaming()
                 for chunk in self.llm.stream(input=llm_messages):
                     for item in chunk.content:
                         if isinstance(item, dict) and "text" in item:
