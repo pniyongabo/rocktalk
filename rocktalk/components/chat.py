@@ -209,3 +209,44 @@ class ChatInterface:
 
             # Now rerun after the complete conversation turn is saved
             st.rerun()
+
+    def _generate_session_title(
+        self, human_message: ChatMessage, ai_message: ChatMessage
+    ) -> str:
+        """Generate a concise session title using the LLM.
+
+        Args:
+            human_message: The human's ChatMessage.
+            ai_message: The AI's ChatMessage.
+
+        Returns:
+            A concise title for the chat session (2-4 words).
+
+        Note:
+            Falls back to timestamp-based title if LLM fails to generate one.
+        """
+        # Extract text content from messages
+        human_text = next(
+            (item["text"] for item in human_message.content if item["type"] == "text"),
+            "",
+        )
+        ai_text = ai_message.content if isinstance(ai_message.content, str) else ""
+
+        title_prompt: HumanMessage = HumanMessage(
+            content=f"""Summarize this conversation's topic in up to 5 words or about 40 characters. 
+            More details are useful, but space is limited to show this summary, so ideally 2-4 words.
+            Be direct and concise, no explanations needed. If there are missing messages, do the best you can to keep the summary short.    
+            
+            Conversation:
+            Human: {human_text or "No human message."}
+            Assistant: {ai_text}"""
+        )
+        print(title_prompt)
+        title: str = self.llm.invoke([title_prompt]).content.strip('" \n').strip()
+
+        # Fallback to timestamp if we get an empty or invalid response
+        if not title:
+            title = f"Chat {datetime.now()}"
+
+        print(f"New session title: {title}")
+        return title
