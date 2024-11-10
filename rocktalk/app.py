@@ -38,15 +38,6 @@ if "llm" not in st.session_state:
     )
     print("--- LLM initialized ---")
 
-# Initialize messages list if not exists
-if "messages" not in st.session_state:
-    st.session_state.messages: list[AIMessage | HumanMessage] = []
-    print("--- Chat history initialized ---")
-
-# Initialize current session ID if not exists
-if "current_session_id" not in st.session_state:
-    st.session_state.current_session_id: str | None = None
-
 sidebar = Sidebar(storage=st.session_state.storage)
 sidebar.render()
 

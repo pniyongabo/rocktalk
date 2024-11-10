@@ -29,6 +29,10 @@ class ChatInterface:
     def __init__(self, storage: StorageInterface, llm: LLMInterface):
         self.storage = storage
         self.llm = llm
+        if "messages" not in st.session_state:
+            st.session_state.messages = []  # List[ChatMessage]
+        if "current_session_id" not in st.session_state:
+            st.session_state.current_session_id = None  # str
 
     def render(self):
         """
