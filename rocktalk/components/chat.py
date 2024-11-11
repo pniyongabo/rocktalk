@@ -173,6 +173,7 @@ class ChatInterface:
         """Display the chat history in the Streamlit interface."""
 
         for message in st.session_state.messages:
+            message: ChatMessage
             message.display()
 
         st.session_state.scroll_div_index = 0
@@ -184,7 +185,7 @@ class ChatInterface:
         Gets input from the chat prompt and processes it if provided.
         """
         user_input: Optional[PromptReturn] = prompt(
-            "chat_input", key="user_input", placeholder="Hello!"
+            "chat_input", key="user_input", placeholder="Hello!", disabled=False
         )  # TODO: add disabled if not users turn
 
         if st.session_state.turn_state == TurnState.HUMAN_TURN:

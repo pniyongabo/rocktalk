@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional, Protocol
 from PIL.ImageFile import ImageFile
 from langchain.schema import AIMessage, BaseMessage, HumanMessage
 from pydantic import BaseModel, Field
-from streamlit_chat_prompt import PromptReturn
+from streamlit_chat_prompt import PromptReturn, ImageData, prompt
 import streamlit as st
 from utils.image_utils import image_from_b64_image, MAX_IMAGE_WIDTH
 
@@ -17,23 +17,49 @@ class ChatMessage(BaseModel):
     metadata: Optional[Dict] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.now)
 
+    @st.dialog("test dialog")
+    def test_dg(self):
+        previous_prompt = self.to_prompt_return()
+        prompt(
+            "edit prompt",
+            key=f"edit_prompt_{id(self)}",
+            placeholder=previous_prompt.message or "",
+            main_bottom=False,
+            default=previous_prompt,
+        )
+        # st.write(previous_prompt)
+
     def display(self) -> None:
-        with st.chat_message(self.role):
-            if isinstance(self.content, str):
-                st.markdown(self.content)
-            elif isinstance(self.content, list):
-                for item in self.content:
-                    if isinstance(item, dict):
-                        if item["type"] == "text":
-                            st.markdown(item["text"])
-                        elif item["type"] == "image":
-                            pil_image: ImageFile = image_from_b64_image(
-                                item["source"]["data"]
-                            )
-                            width: int = pil_image.size[0]
-                            st.image(image=pil_image, width=min(width, MAX_IMAGE_WIDTH))
-                    else:
-                        st.markdown(str(item))
+        # Only show edit button for user messages
+        col1, col2 = st.columns([0.9, 0.1])
+        with col1:
+
+            with st.chat_message(self.role):
+                if isinstance(self.content, str):
+                    st.markdown(self.content)
+                elif isinstance(self.content, list):
+                    for item in self.content:
+                        if isinstance(item, dict):
+                            if item["type"] == "text":
+                                st.markdown(item["text"])
+                            elif item["type"] == "image":
+                                pil_image: ImageFile = image_from_b64_image(
+                                    item["source"]["data"]
+                                )
+                                width: int = pil_image.size[0]
+                                st.image(
+                                    image=pil_image, width=min(width, MAX_IMAGE_WIDTH)
+                                )
+                        else:
+                            st.markdown(str(item))
+            with col2:
+                if self.role == "user":
+                    if st.button("✎", key=f"edit_{id(self)}"):
+                        self.test_dg()
+                    # Set editing state and message content to edit
+                    # st.session_state.turn_state = TurnState.EDITING  # Would need to add this state
+                    # st.session_state.editing_message = self
+                    # st.rerun()
 
     def convert_to_llm_message(self) -> BaseMessage:
         """Convert ChatMessage to LangChain message format.
@@ -84,6 +110,33 @@ class ChatMessage(BaseModel):
                 )
 
         return ChatMessage(session_id=session_id or "", role="user", content=content)
+
+    def to_prompt_return(self) -> PromptReturn:
+        """Convert ChatMessage back to PromptReturn format.
+
+        Returns:
+            PromptReturn object containing the message text and any images.
+        """
+        message = None
+        images = []
+
+        if isinstance(self.content, list):
+            for item in self.content:
+                if isinstance(item, dict):
+                    if item["type"] == "text":
+                        message = item["text"]
+                    elif item["type"] == "image":
+                        images.append(
+                            ImageData(
+                                format=item["source"]["type"],
+                                type=item["source"]["media_type"],
+                                data=item["source"]["data"],
+                            )
+                        )
+        elif isinstance(self.content, str):
+            message = self.content
+
+        return PromptReturn(message=message, images=images if images else None)
 
 
 class ChatSession(BaseModel):
