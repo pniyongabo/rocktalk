@@ -149,7 +149,21 @@ def session_settings(df_session: pd.Series):
 
         # Add message preview
         st.markdown("#### Recent Messages")
-        debug(messages)
+        # debug(messages)
         recent_messages_index = min(4, len(messages))
         for msg in messages[:recent_messages_index]:
-            st.json(msg.model_dump_json())
+            # Get the full model dump
+            msg_dict = msg.model_dump()
+
+            # Truncate image data if present
+            if msg_dict.get("content") and isinstance(msg_dict["content"], list):
+                for item in msg_dict["content"]:
+                    if isinstance(item, dict) and item.get("type") == "image":
+                        # Truncate the base64 data
+                        if "data" in item["source"]:
+                            item["source"]["data"] = (
+                                item["source"]["data"][:10] + "...[truncated]"
+                            )
+
+            # Convert back to JSON and display
+            st.json(msg_dict)
