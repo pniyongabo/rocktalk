@@ -185,8 +185,12 @@ class ChatInterface:
         Gets input from the chat prompt and processes it if provided.
         """
         user_input: Optional[PromptReturn] = prompt(
-            "chat_input", key="user_input", placeholder="Hello!", disabled=False
-        )  # TODO: add disabled if not users turn
+            name="chat_input",
+            key="user_input",
+            placeholder="Hello!",
+            disabled=False,
+            max_image_size=5 * 1024 * 1024,
+        )
 
         if st.session_state.turn_state == TurnState.HUMAN_TURN:
             if user_input:
