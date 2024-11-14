@@ -35,8 +35,8 @@ class SQLiteChatStorage:
                 CREATE TABLE IF NOT EXISTS sessions (
                     session_id TEXT PRIMARY KEY,
                     title TEXT NOT NULL,
-                    created_at TIMESTAMP NOT NULL,  -- Using TIMESTAMP type
-                    last_active TIMESTAMP NOT NULL, -- Using TIMESTAMP type
+                    created_at TIMESTAMP NOT NULL,
+                    last_active TIMESTAMP NOT NULL,
                     metadata TEXT
                 );
 
@@ -45,24 +45,25 @@ class SQLiteChatStorage:
                     session_id TEXT NOT NULL,
                     role TEXT NOT NULL,
                     content TEXT NOT NULL,
-                    timestamp TIMESTAMP NOT NULL,   -- Using TIMESTAMP type
+                    message_index INTEGER NOT NULL,
+                    timestamp TIMESTAMP NOT NULL,
                     metadata TEXT,
-                    FOREIGN KEY (session_id) REFERENCES sessions(session_id)
+                    FOREIGN KEY (session_id) REFERENCES sessions(session_id),
+                    UNIQUE(session_id, message_index)  -- Ensure unique indexes per session
                 );
 
                 -- Indexes for better search performance
                 CREATE INDEX IF NOT EXISTS idx_messages_session_id 
-                ON messages(session_id);
+                ON messages(session_id, message_index);
                 
                 CREATE INDEX IF NOT EXISTS idx_sessions_last_active 
                 ON sessions(last_active);
                 
                 CREATE INDEX IF NOT EXISTS idx_messages_timestamp 
                 ON messages(timestamp);
-                
-                CREATE INDEX IF NOT EXISTS idx_messages_content 
-                ON messages(content);
             """
+                # CREATE INDEX IF NOT EXISTS idx_messages_content
+                # ON messages(content);
             )
 
     def store_session(self, session: ChatSession) -> ChatSession:
@@ -90,18 +91,18 @@ class SQLiteChatStorage:
             conn.execute(
                 """
                 INSERT INTO messages 
-                (session_id, role, content, timestamp, metadata)
-                VALUES (?, ?, ?, ?, ?)
-            """,
+                (session_id, role, content, message_index, timestamp, metadata)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
                 (
                     message.session_id,
                     message.role,
                     json.dumps(message.content),
+                    message.index,
                     format_datetime(message.created_at),
                     json.dumps(message.metadata),
                 ),
             )
-
             # Update session's last_active timestamp
             conn.execute(
                 """
@@ -112,12 +113,73 @@ class SQLiteChatStorage:
                 (format_datetime(message.created_at), message.session_id),
             )
 
+    def delete_messages_from_index(self, session_id: str, from_index: int) -> None:
+        """Delete all messages with index >= from_index for the given session."""
+        with self.get_connection() as conn:
+            conn.execute(
+                """
+                DELETE FROM messages 
+                WHERE session_id = ? AND message_index >= ?
+                """,
+                (session_id, from_index),
+            )
+
+    def delete_message(self, session_id: str, message_index: int) -> None:
+        """Delete a specific message by its index from a chat session."""
+        with self.get_connection() as conn:
+            try:
+                # Start a transaction
+                conn.execute("BEGIN TRANSACTION")
+
+                # Delete the specific message
+                result = conn.execute(
+                    """
+                    DELETE FROM messages 
+                    WHERE session_id = ? AND message_index = ?
+                    """,
+                    (session_id, message_index),
+                )
+
+                # Check if a message was actually deleted
+                if result.rowcount == 0:
+                    raise ValueError(
+                        f"No message found with index {message_index} in session {session_id}"
+                    )
+
+                # Update indexes of subsequent messages
+                conn.execute(
+                    """
+                    UPDATE messages 
+                    SET message_index = message_index - 1
+                    WHERE session_id = ? AND message_index > ?
+                    """,
+                    (session_id, message_index),
+                )
+
+                # Update session's last_active timestamp
+                conn.execute(
+                    """
+                    UPDATE sessions 
+                    SET last_active = ?
+                    WHERE session_id = ?
+                    """,
+                    (format_datetime(datetime.now()), session_id),
+                )
+
+                # Commit the transaction
+                conn.execute("COMMIT")
+            except Exception as e:
+                # If any error occurs, rollback the transaction
+                conn.execute("ROLLBACK")
+                raise e
+
     def _deserialize_message(self, row: sqlite3.Row) -> ChatMessage:
         """Deserialize a message from the database row"""
         return ChatMessage(
             session_id=row["session_id"],
             role=row["role"],
             content=json.loads(row["content"]),
+            index=row["message_index"],
             created_at=parse_datetime(row["timestamp"]),
             metadata=json.loads(row["metadata"]) if row["metadata"] else {},
         )

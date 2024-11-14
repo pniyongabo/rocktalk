@@ -1,33 +1,58 @@
 import uuid
 from datetime import datetime
+from enum import Enum
 from typing import Any, Dict, List, Optional, Protocol
 
-from PIL.ImageFile import ImageFile
-from langchain.schema import AIMessage, BaseMessage, HumanMessage
-from pydantic import BaseModel, Field
-from streamlit_chat_prompt import PromptReturn, ImageData, prompt
 import streamlit as st
-from utils.image_utils import image_from_b64_image, MAX_IMAGE_WIDTH
+from langchain.schema import AIMessage, BaseMessage, HumanMessage
+from PIL.ImageFile import ImageFile
+from pydantic import BaseModel, Field
+from streamlit_chat_prompt import ImageData, PromptReturn, prompt
+from utils.image_utils import MAX_IMAGE_WIDTH, image_from_b64_image
+from utils.streamlit_utils import close_dialog
+
+
+class TurnState(Enum):
+    """Enum representing the current turn state in the conversation.
+
+    Attributes:
+        HUMAN_TURN: Waiting for human input.
+        AI_TURN: Waiting for AI response.
+        COMPLETE: Conversation is complete.
+    """
+
+    HUMAN_TURN = "human_turn"
+    AI_TURN = "ai_turn"
+    COMPLETE = "complete"
 
 
 class ChatMessage(BaseModel):
     session_id: str
     role: str
     content: str | list[str | dict]
+    index: int
     metadata: Optional[Dict] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.now)
 
-    @st.dialog("test dialog")
-    def test_dg(self):
+    @st.dialog("Edit Message")
+    def edit_message(self):
         previous_prompt = self.to_prompt_return()
-        prompt(
+        st.warning(
+            "Editing message will re-run conversation from this point and will replace any existing conversation past this point!",
+            icon="⚠️",
+        )
+        prompt_return = prompt(
             "edit prompt",
             key=f"edit_prompt_{id(self)}",
             placeholder=previous_prompt.message or "",
             main_bottom=False,
             default=previous_prompt,
         )
-        # st.write(previous_prompt)
+
+        if prompt_return:
+            st.session_state.edit_message_value = self, prompt_return
+            close_dialog()
+            st.rerun()
 
     def display(self) -> None:
         # Only show edit button for user messages
@@ -36,7 +61,7 @@ class ChatMessage(BaseModel):
 
             with st.chat_message(self.role):
                 if isinstance(self.content, str):
-                    st.markdown(self.content)
+                    st.text(self.content)
                 elif isinstance(self.content, list):
                     for item in self.content:
                         if isinstance(item, dict):
@@ -55,11 +80,7 @@ class ChatMessage(BaseModel):
             with col2:
                 if self.role == "user":
                     if st.button("✎", key=f"edit_{id(self)}"):
-                        self.test_dg()
-                    # Set editing state and message content to edit
-                    # st.session_state.turn_state = TurnState.EDITING  # Would need to add this state
-                    # st.session_state.editing_message = self
-                    # st.rerun()
+                        self.edit_message()
 
     def convert_to_llm_message(self) -> BaseMessage:
         """Convert ChatMessage to LangChain message format.
@@ -82,13 +103,16 @@ class ChatMessage(BaseModel):
 
     @staticmethod
     def create_from_prompt(
-        user_input: PromptReturn, session_id: Optional[str] = None
+        user_input: PromptReturn,
+        session_id: Optional[str] = None,
+        index: Optional[int] = None,
     ) -> "ChatMessage":
         """Create ChatMessage from user input.
 
         Args:
             user_input: User input containing message and optional images.
             session_id: Optional session ID for the message.
+            index: Optional index for the message.
 
         Returns:
             ChatMessage object containing the user input.
@@ -109,7 +133,12 @@ class ChatMessage(BaseModel):
                     }
                 )
 
-        return ChatMessage(session_id=session_id or "", role="user", content=content)
+        return ChatMessage(
+            session_id=session_id or "",
+            role="user",
+            content=content,
+            index=index if index is not None else len(st.session_state.messages),
+        )
 
     def to_prompt_return(self) -> PromptReturn:
         """Convert ChatMessage back to PromptReturn format.

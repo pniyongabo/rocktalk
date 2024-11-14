@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import List, Protocol
+
 from models.interfaces import ChatMessage, ChatSession
 
 
@@ -30,6 +31,20 @@ class StorageInterface(Protocol):
 
     def get_session_info(self, session_id: str) -> ChatSession:
         """Get detailed information about a specific session"""
+        ...
+
+    def delete_message(self, session_id: str, index: int) -> None:
+        """Delete a specific message by its index.
+
+        Args:
+            session_id: ID of the session containing the message
+            index: Index of the message to delete
+        """
+        ...
+        # TODO, not ideal to delete message based on datetime, lets use an index instead. Requires modifying the ChatMessage type to hold this index
+
+    def delete_messages_from_index(self, session_id: str, from_index: int) -> None:
+        """Delete all messages with index >= from_index for the given session."""
         ...
 
     def delete_session(self, session_id: str) -> None:

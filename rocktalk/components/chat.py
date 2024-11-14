@@ -1,32 +1,17 @@
 """Chat interface module for handling user-AI conversations with support for text and images."""
 
 from datetime import datetime
-from enum import Enum
-from typing import Any, Optional, cast
+from typing import Optional
 
 import streamlit as st
 import streamlit.components.v1 as components
-from langchain.schema import HumanMessage, BaseMessage
-from models.interfaces import ChatMessage, ChatSession
+from langchain.schema import BaseMessage, HumanMessage
+from models.interfaces import ChatMessage, ChatSession, TurnState
 from models.llm import LLMInterface
 from storage.storage_interface import StorageInterface
 from streamlit_chat_prompt import PromptReturn, prompt
 
 MODEL = "anthropic.claude-3-sonnet-20240229-v1:0"
-
-
-class TurnState(Enum):
-    """Enum representing the current turn state in the conversation.
-
-    Attributes:
-        HUMAN_TURN: Waiting for human input.
-        AI_TURN: Waiting for AI response.
-        COMPLETE: Conversation is complete.
-    """
-
-    HUMAN_TURN = "human_turn"
-    AI_TURN = "ai_turn"
-    COMPLETE = "complete"
 
 
 class ChatInterface:
@@ -55,12 +40,13 @@ class ChatInterface:
             st.session_state.messages = []  # List[ChatMessage]
         if "current_session_id" not in st.session_state:
             st.session_state.current_session_id = None  # str
+        if "edit_message_value" not in st.session_state:
+            st.session_state.edit_message_value = None  # ChatMessage, PromptReturn
 
     def render(self) -> None:
         """Render the chat interface and handle the current turn state."""
+        self._handle_edit_message()
         self._display_chat_history()
-
-        # if st.session_state.turn_state == TurnState.HUMAN_TURN:
         self._handle_chat_input()
         self._generate_ai_response()
 
@@ -179,6 +165,35 @@ class ChatInterface:
         st.session_state.scroll_div_index = 0
         self._scroll_to_bottom()
 
+    def _handle_edit_message(self) -> None:
+        if st.session_state.edit_message_value:
+            original_message: ChatMessage = st.session_state.edit_message_value[0]
+            prompt_return: PromptReturn = st.session_state.edit_message_value[1]
+
+            # Remove this message and all following messages
+            st.session_state.messages = st.session_state.messages[
+                : original_message.index
+            ]
+            st.session_state.storage.delete_messages_from_index(
+                session_id=st.session_state.current_session_id,
+                from_index=original_message.index,
+            )
+
+            new_message = ChatMessage.create_from_prompt(
+                user_input=prompt_return,
+                session_id=original_message.session_id,
+                index=original_message.index,
+            )
+
+            # Add edited message
+            st.session_state.messages.append(new_message)
+            st.session_state.storage.save_message(message=new_message)
+
+            # Set turn state to AI_TURN to generate new response
+            st.session_state.turn_state = TurnState.AI_TURN
+
+            st.session_state.edit_message_value = None
+
     def _handle_chat_input(self) -> None:
         """Handle user input from the chat interface.
 
@@ -243,11 +258,14 @@ class ChatInterface:
                 message_placeholder.markdown(full_response)
 
                 # Create ChatMessage
+                current_index = len(st.session_state.messages)
+
                 st.session_state.messages.append(
                     ChatMessage(
                         session_id=st.session_state.current_session_id or "",
                         role="assistant",
                         content=full_response,
+                        index=current_index,
                     )
                 )
 
