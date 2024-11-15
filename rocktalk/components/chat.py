@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 
 import streamlit as st
-import streamlit.components.v1 as components
+import streamlit.components.v1 as stcomponents
 from langchain.schema import BaseMessage, HumanMessage
 from models.interfaces import ChatMessage, ChatSession, TurnState
 from models.llm import LLMInterface
@@ -90,7 +90,7 @@ class ChatInterface:
         """
         )
 
-        components.html(js, height=0)
+        stcomponents.html(js, height=0)
 
     def _scroll_to_bottom_streaming(self) -> None:
         """Automatically scrolls the chat window during streaming responses.
@@ -153,7 +153,7 @@ class ChatInterface:
             }, 30000);
         </script>
         """
-        components.html(js, height=0)
+        stcomponents.html(js, height=0)
 
     def _display_chat_history(self) -> None:
         """Display the chat history in the Streamlit interface."""

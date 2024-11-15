@@ -61,7 +61,7 @@ class ChatMessage(BaseModel):
 
             with st.chat_message(self.role):
                 if isinstance(self.content, str):
-                    st.text(self.content)
+                    st.markdown(self.content)
                 elif isinstance(self.content, list):
                     for item in self.content:
                         if isinstance(item, dict):
