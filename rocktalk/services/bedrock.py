@@ -3,15 +3,15 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Set
 
 import boto3
-from mypy_boto3_bedrock.type_defs import (
-    ListFoundationModelsResponseTypeDef,
-    FoundationModelSummaryTypeDef,
-)
 from mypy_boto3_bedrock.literals import (
-    ModelModalityType,
-    ModelCustomizationType,
-    InferenceTypeType,
     FoundationModelLifecycleStatusType,
+    InferenceTypeType,
+    ModelCustomizationType,
+    ModelModalityType,
+)
+from mypy_boto3_bedrock.type_defs import (
+    FoundationModelSummaryTypeDef,
+    ListFoundationModelsResponseTypeDef,
 )
 
 # Known maximum output tokens for specific models
