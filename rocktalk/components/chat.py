@@ -68,9 +68,9 @@ class ChatInterface:
                 const endMarker = mainWindow.document.getElementById('"""
             + f"""end-of-chat-{index}"""
             + """');
-                
+
                 if (endMarker) {
-                    endMarker.scrollIntoView({ 
+                    endMarker.scrollIntoView({
                         behavior: 'smooth',
                         block: 'end'
                     });
@@ -82,7 +82,7 @@ class ChatInterface:
                     });
                 }
             }
-            
+
             // Call immediately and after a short delay to ensure content is loaded
             scrollToBottom();
             setTimeout(scrollToBottom, 100);
@@ -134,17 +134,17 @@ class ChatInterface:
                     const markdowns = window.parent.document.querySelectorAll('.stMarkdown');
                     if (markdowns.length > 0) {
                         const lastMarkdown = markdowns[markdowns.length - 1];
-                        lastMarkdown.scrollIntoView({ 
-                            behavior: 'smooth', 
-                            block: 'end' 
+                        lastMarkdown.scrollIntoView({
+                            behavior: 'smooth',
+                            block: 'end'
                         });
                     }
                 }
             }
-            
+
             // Start auto-scroll only if user hasn't manually scrolled
             scrollInterval = setInterval(keepInView, 100);
-            
+
             // Clear interval after 30 seconds as a safety measure
             setTimeout(() => {
                 if (scrollInterval) {
@@ -307,7 +307,7 @@ class ChatInterface:
         """
 
         title_prompt: HumanMessage = HumanMessage(
-            content=f"""Summarize this conversation's topic in up to 5 words or about 40 characters. 
+            content=f"""Summarize this conversation's topic in up to 5 words or about 40 characters.
             More details are useful, but space is limited to show this summary, so ideally 2-4 words.
             Be direct and concise, no explanations needed. If there are missing messages, do the best you can to keep the summary short."""
         )

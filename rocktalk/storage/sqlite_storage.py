@@ -53,13 +53,13 @@ class SQLiteChatStorage:
                 );
 
                 -- Indexes for better search performance
-                CREATE INDEX IF NOT EXISTS idx_messages_session_id 
+                CREATE INDEX IF NOT EXISTS idx_messages_session_id
                 ON messages(session_id, message_index);
-                
-                CREATE INDEX IF NOT EXISTS idx_sessions_last_active 
+
+                CREATE INDEX IF NOT EXISTS idx_sessions_last_active
                 ON sessions(last_active);
-                
-                CREATE INDEX IF NOT EXISTS idx_messages_timestamp 
+
+                CREATE INDEX IF NOT EXISTS idx_messages_timestamp
                 ON messages(timestamp);
             """
                 # CREATE INDEX IF NOT EXISTS idx_messages_content
@@ -71,7 +71,7 @@ class SQLiteChatStorage:
         with self.get_connection() as conn:
             conn.execute(
                 """
-                INSERT INTO sessions 
+                INSERT INTO sessions
                 (session_id, title, created_at, last_active, metadata)
                 VALUES (?, ?, ?, ?, ?)
             """,
@@ -90,7 +90,7 @@ class SQLiteChatStorage:
         with self.get_connection() as conn:
             conn.execute(
                 """
-                INSERT INTO messages 
+                INSERT INTO messages
                 (session_id, role, content, message_index, timestamp, metadata)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
@@ -106,8 +106,8 @@ class SQLiteChatStorage:
             # Update session's last_active timestamp
             conn.execute(
                 """
-                UPDATE sessions 
-                SET last_active = ? 
+                UPDATE sessions
+                SET last_active = ?
                 WHERE session_id = ?
             """,
                 (format_datetime(message.created_at), message.session_id),
@@ -118,7 +118,7 @@ class SQLiteChatStorage:
         with self.get_connection() as conn:
             conn.execute(
                 """
-                DELETE FROM messages 
+                DELETE FROM messages
                 WHERE session_id = ? AND message_index >= ?
                 """,
                 (session_id, from_index),
@@ -134,7 +134,7 @@ class SQLiteChatStorage:
                 # Delete the specific message
                 result = conn.execute(
                     """
-                    DELETE FROM messages 
+                    DELETE FROM messages
                     WHERE session_id = ? AND message_index = ?
                     """,
                     (session_id, message_index),
@@ -149,7 +149,7 @@ class SQLiteChatStorage:
                 # Update indexes of subsequent messages
                 conn.execute(
                     """
-                    UPDATE messages 
+                    UPDATE messages
                     SET message_index = message_index - 1
                     WHERE session_id = ? AND message_index > ?
                     """,
@@ -159,7 +159,7 @@ class SQLiteChatStorage:
                 # Update session's last_active timestamp
                 conn.execute(
                     """
-                    UPDATE sessions 
+                    UPDATE sessions
                     SET last_active = ?
                     WHERE session_id = ?
                     """,
@@ -213,8 +213,8 @@ class SQLiteChatStorage:
         with self.get_connection() as conn:
             cursor = conn.execute(
                 """
-                SELECT * FROM messages 
-                WHERE session_id = ? 
+                SELECT * FROM messages
+                WHERE session_id = ?
                 ORDER BY timestamp
             """,
                 (session_id,),
@@ -226,7 +226,7 @@ class SQLiteChatStorage:
         with self.get_connection() as conn:
             cursor = conn.execute(
                 """
-                SELECT DISTINCT 
+                SELECT DISTINCT
                     s.*,
                     MAX(m.timestamp) as last_message,
                     COUNT(m.message_id) as message_count
@@ -248,7 +248,7 @@ class SQLiteChatStorage:
         with self.get_connection() as conn:
             cursor = conn.execute(
                 """
-                SELECT DISTINCT 
+                SELECT DISTINCT
                     s.*,
                     MIN(m.timestamp) as first_message,
                     MAX(m.timestamp) as last_message,
@@ -268,7 +268,7 @@ class SQLiteChatStorage:
         with self.get_connection() as conn:
             cursor = conn.execute(
                 """
-                SELECT 
+                SELECT
                     s.*,
                     MIN(m.timestamp) as first_message,
                     MAX(m.timestamp) as last_message,
@@ -291,7 +291,7 @@ class SQLiteChatStorage:
         with self.get_connection() as conn:
             cursor = conn.execute(
                 """
-                SELECT s.*, 
+                SELECT s.*,
                     (SELECT COUNT(*) FROM messages WHERE messages.session_id = s.session_id) as message_count,
                     (SELECT MIN(timestamp) FROM messages WHERE messages.session_id = s.session_id) as first_message,
                     (SELECT MAX(timestamp) FROM messages WHERE messages.session_id = s.session_id) as last_message
@@ -308,7 +308,7 @@ class SQLiteChatStorage:
         with self.get_connection() as conn:
             conn.execute(
                 """
-                UPDATE sessions 
+                UPDATE sessions
                 SET title = ?, last_active = ?
                 WHERE session_id = ?
             """,
