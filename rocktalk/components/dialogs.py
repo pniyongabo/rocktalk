@@ -5,27 +5,17 @@ import pandas as pd
 import streamlit as st
 from config.settings import SettingsManager
 from devtools import debug
-from models.interfaces import ChatExport, ChatMessage
+from models.interfaces import ChatExport, ChatMessage, ChatSession
+from models.storage_interface import StorageInterface
 
 
 @st.dialog("Interface Options")
 def interface_options():
-    # TODO: WIP code to delete all sessions
-    with st.form("Reset button", clear_on_submit=False):
-        st.warning("⚠️ This will delete ALL sessions and messages!")
-        if st.form_submit_button("Reset All Data"):
-            if st.session_state.get("confirm_reset", False):
-                st.session_state.storage.delete_all_sessions()
-                st.session_state.current_session_id = None
-                st.session_state.messages = []
-                st.rerun()
-            else:
-                st.session_state["confirm_reset"] = True
-                st.warning("Click again to confirm reset")
+    if st.session_state.current_session_id is None:
+        SettingsManager.render_settings_widget()
+        st.divider()
 
-    st.divider()
     with st.form("Session upload form", clear_on_submit=True):
-
         submitted = st.form_submit_button("UPLOAD!")
         uploaded_file = st.file_uploader(
             "Import Conversation", type=["json"], key="conversation_import"
@@ -34,7 +24,7 @@ def interface_options():
         if submitted and uploaded_file is not None:
             try:
                 import_data = ChatExport.model_validate_json(uploaded_file.getvalue())
-                debug(import_data)
+                # debug(import_data)
                 # Create new session
                 st.session_state.storage.store_session(import_data.session)
 
@@ -51,21 +41,37 @@ def interface_options():
                 st.error(f"Error importing conversation: {str(e)}")
                 raise e
 
+    st.divider()
+
+    with st.form("Reset button", clear_on_submit=False):
+        st.warning("⚠️ This will delete ALL sessions and messages!")
+        if st.form_submit_button("Reset All Data"):
+            if st.session_state.get("confirm_reset", False):
+                st.session_state.storage.delete_all_sessions()
+                st.session_state.current_session_id = None
+                st.session_state.messages = []
+                st.rerun()
+            else:
+                st.session_state["confirm_reset"] = True
+                st.warning("Click again to confirm reset")
+
 
 @st.dialog("Session settings")
 def session_settings(df_session: pd.Series):
     st.markdown("### Session Options")
     session_id = df_session["session_id"]
 
+    storage: StorageInterface = st.session_state.storage
+    messages: List[ChatMessage] = storage.get_messages(session_id)
+    session: ChatSession = storage.get_session(session_id)
+
     # Add tabs for different settings categories
-    tab1, tab2, tab3 = st.tabs(["Session Info", "Model Settings", "Debug Info"])
+    tab1, tab2, tab3 = st.tabs(["Model Settings", "Session Info", "Debug Info"])
 
     with tab1:
-        messages: List[ChatMessage] = st.session_state.storage.get_session_messages(
-            session_id
-        )
-        session = st.session_state.storage.get_session_info(session_id)
+        SettingsManager.render_settings_widget(session)
 
+    with tab2:
         export_data = ChatExport(
             session=session, messages=messages, exported_at=datetime.now()
         )
@@ -82,18 +88,18 @@ def session_settings(df_session: pd.Series):
         new_name = st.text_input(
             "Rename session",
             value=df_session["title"],
-            key=f"rename_{df_session['session_id']}",
+            key=f"rename_{session_id}",
         )
 
         col1, col2 = st.columns(2)
         with col1:
             if st.button(
                 "Save",
-                key=f"save_{df_session['session_id']}",
+                key=f"save_{session_id}",
                 type="primary",
             ):
-                if new_name != df_session["title"]:
-                    st.session_state.storage.rename_session(
+                if new_name and new_name != df_session["title"]:
+                    storage.rename_session(
                         session_id=session_id,
                         new_title=new_name,
                     )
@@ -102,7 +108,7 @@ def session_settings(df_session: pd.Series):
         with col2:
             if st.button(
                 "Cancel",
-                key=f"cancel_{df_session['session_id']}",
+                key=f"cancel_{session_id}",
             ):
                 st.rerun()
 
@@ -111,25 +117,22 @@ def session_settings(df_session: pd.Series):
         # Delete option
         if st.button(
             "🗑️ Delete Session",
-            key=f"delete_{df_session['session_id']}",
+            key=f"delete_{session_id}",
             type="secondary",
             use_container_width=True,
         ):
             if st.session_state.get(
-                f"confirm_delete_{df_session['session_id']}",
+                f"confirm_delete_{session_id}",
                 False,
             ):
-                st.session_state.storage.delete_session(session_id)
+                storage.delete_session(session_id=session_id)
                 if st.session_state.current_session_id == session_id:
                     st.session_state.current_session_id = None
                     st.session_state.messages = []
                 st.rerun()
             else:
-                st.session_state[f"confirm_delete_{df_session['session_id']}"] = True
+                st.session_state[f"confirm_delete_{session_id}"] = True
                 st.warning("Click again to confirm deletion")
-
-    with tab2:
-        SettingsManager.render_settings_widget()
 
     with tab3:
         st.markdown("### 🔍 Debug Information")
@@ -137,7 +140,7 @@ def session_settings(df_session: pd.Series):
         # Display all session information in a formatted way
         st.markdown("#### Basic Info")
         st.code(
-            f"""Session ID: {df_session['session_id']}
+            f"""Session ID: {session_id}
     Title: {df_session['title'][:57] + '...' if len(df_session['title']) > 57 and not df_session['title'][57].isspace() else df_session['title'][:60]}
     Created: {df_session['created_at']}
     Last Active: {df_session['last_active']}

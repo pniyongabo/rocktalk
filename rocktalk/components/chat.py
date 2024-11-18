@@ -6,12 +6,14 @@ from typing import Optional
 import streamlit as st
 import streamlit.components.v1 as stcomponents
 from langchain.schema import BaseMessage, HumanMessage
-from models.interfaces import ChatMessage, ChatSession, TurnState
-from models.llm import LLMInterface
-from storage.storage_interface import StorageInterface
+from models.interfaces import (
+    ChatMessage,
+    ChatSession,
+    TurnState,
+)
+from models.storage_interface import StorageInterface
 from streamlit_chat_prompt import PromptReturn, prompt
-
-MODEL = "anthropic.claude-3-sonnet-20240229-v1:0"
+from models.llm import LLMInterface
 
 
 class ChatInterface:
@@ -25,15 +27,19 @@ class ChatInterface:
         llm (LLMInterface): Interface for the language model providing AI responses.
     """
 
-    def __init__(self, storage: StorageInterface, llm: LLMInterface) -> None:
+    storage: StorageInterface
+    llm: LLMInterface
+
+    def __init__(self) -> None:
         """Initialize the chat interface.
 
         Args:
             storage: Storage interface for persisting chat data.
             llm: Language model interface for generating responses.
         """
-        self.storage = storage
-        self.llm = llm
+        self.storage: StorageInterface = st.session_state.storage
+        self.llm: LLMInterface = st.session_state.llm
+
         if "turn_state" not in st.session_state:
             st.session_state.turn_state = TurnState.HUMAN_TURN
         if "messages" not in st.session_state:
@@ -235,6 +241,23 @@ class ChatInterface:
         """
         return [msg.convert_to_llm_message() for msg in st.session_state.messages]
 
+    @staticmethod
+    def clear_session():
+        st.session_state.current_session_id = None
+        st.session_state.messages = []
+
+    def load_session(self, session_id: str) -> ChatSession:
+        session = self.storage.get_session(session_id)
+        # if session:
+        # st.session_state.chat_session = session
+        st.session_state.current_session_id = session_id
+        st.session_state.messages = self.storage.get_messages(session.session_id)
+
+        # Load session settings
+        self.llm.update_config(session.config)
+        print(f"Loaded session {session.session_id} with config {session.config}")
+        return session
+
     def _generate_ai_response(self) -> None:
         """Generate and display an AI response."""
 
@@ -273,15 +296,9 @@ class ChatInterface:
                 if not st.session_state.current_session_id:
                     title: str = self._generate_session_title()
                     new_session: ChatSession = ChatSession.create(
-                        title=title,
-                        metadata={
-                            "model": MODEL
-                        },  # TODO use metadata from app settings?
+                        title=title, config=self.llm.get_config().model_copy()
                     )
-                    self.storage.store_session(session=new_session)
-
-                    st.session_state.current_session_id = new_session.session_id
-
+                    self.storage.store_session(new_session)
                     # Update session_id for all messages and save
                     for msg in st.session_state.messages:
                         msg.session_id = new_session.session_id

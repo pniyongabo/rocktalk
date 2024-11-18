@@ -2,35 +2,44 @@ import dotenv
 import streamlit as st
 from components.chat import ChatInterface
 from components.sidebar import Sidebar
-from langchain_aws import ChatBedrockConverse
 from storage.sqlite_storage import SQLiteChatStorage
+from config.settings import AppConfig
+from models.llm import BedrockLLM, LLMInterface
 
 # Load environment variables
 dotenv.load_dotenv()
 
 # Set page configuration
-st.set_page_config(page_title="RockTalk", page_icon="🪨", layout="wide")
-st.subheader("RockTalk: Powered by AWS Bedrock 🪨 + LangChain 🦜️🔗 + Streamlit 👑")
+app_config: AppConfig
+if "app_config" not in st.session_state:
+    app_config = AppConfig()
+    st.session_state.app_config = app_config
+else:
+    app_config = st.session_state.app_config
+
+st.set_page_config(
+    page_title=app_config.page_title,
+    page_icon=app_config.page_icon,
+    layout=app_config.layout,
+)
+st.subheader(
+    f"{app_config.page_title}: Powered by AWS Bedrock 🪨 + LangChain 🦜️🔗 + Streamlit 👑"
+)
 
 # Initialize storage in session state
 if "storage" not in st.session_state:
     st.session_state.storage = SQLiteChatStorage(
         db_path="chat_database.db"
     )  # StorageInterface
-    print("--- Storage initialized ---")
 
-# Initialize LLM object in session state
+
+# # Initialize LLM object in session state
 if "llm" not in st.session_state:
-    st.session_state.llm = ChatBedrockConverse(
-        region_name="us-west-2",
-        model="anthropic.claude-3-sonnet-20240229-v1:0",
-        temperature=0,
-        max_tokens=None,
-    )
-    print("--- LLM initialized ---")
+    llm: LLMInterface = BedrockLLM()
+    st.session_state.llm = llm
 
-sidebar = Sidebar(storage=st.session_state.storage)
-sidebar.render()
-
-chat = ChatInterface(storage=st.session_state.storage, llm=st.session_state.llm)
+chat = ChatInterface()
 chat.render()
+
+sidebar = Sidebar(chat_interface=chat)
+sidebar.render()

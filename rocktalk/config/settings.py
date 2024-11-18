@@ -1,84 +1,91 @@
 from dataclasses import dataclass, field
 from enum import Enum
+import time
 from typing import Any, Dict, List, Literal, Optional, Sequence
 
 import dotenv
 import streamlit as st
-from langchain_aws import ChatBedrockConverse
+from models.interfaces import (
+    ChatSession,
+    LLMConfig,
+    LLMParameters,
+    LLMPresetName,
+    PRESET_CONFIGS,
+)
+from models.storage_interface import (
+    StorageInterface,
+)
+import json
+from pydantic import BaseModel
 from services.bedrock import BedrockService, FoundationModelSummary
 from streamlit.commands.page_config import Layout
 
 
-@dataclass
-class LLMConfig:
-    model_id: str
-    temperature: float
-    max_output_tokens: Optional[int]
-    region_name: str
-    stop_sequences: List[str] = field(default_factory=list)
-    top_p: Optional[float] = None
-    top_k: Optional[int] = None  # Additional parameter for Anthropic models
-    system: Optional[str] = None
-    guardrail_config: Optional[Dict[str, Any]] = None
-    additional_model_request_fields: Optional[Dict[str, Any]] = None
-    additional_model_response_field_paths: Optional[List[str]] = None
-    disable_streaming: bool = False
-    supports_tool_choice_values: Optional[Sequence[Literal["auto", "any", "tool"]]] = (
-        None
-    )
-
-
-class LLMPreset(Enum):
-    DETERMINISTIC = "Deterministic"
-    CREATIVE = "Creative"
-    BALANCED = "Balanced"
-    CUSTOM = "Custom"
-
-
-@dataclass
-class AppConfig:
+class AppConfig(BaseModel):
     page_title: str = "RockTalk"
     page_icon: str = "🪨"
     layout: Layout = "wide"
     db_path: str = "chat_database.db"
 
-    @classmethod
-    def get_llm_config(cls) -> LLMConfig:
-        return LLMConfig(
-            model_id="anthropic.claude-3-sonnet-20240229-v1:0",
-            temperature=0.5,
-            max_output_tokens=None,
-            region_name="us-west-2",
-        )
-
 
 class SettingsManager:
-    PRESET_CONFIGS: Dict[LLMPreset, Dict[str, float]] = {
-        LLMPreset.DETERMINISTIC: {"temperature": 0.0},
-        LLMPreset.CREATIVE: {"temperature": 0.9},
-        LLMPreset.BALANCED: {"temperature": 0.5},
-    }
 
     @staticmethod
-    def initialize_settings():
-        if "app_config" not in st.session_state:
-            st.session_state.app_config = AppConfig()
-        if "llm_config" not in st.session_state:
-            st.session_state.llm_config = AppConfig.get_llm_config()
-        if "llm_preset" not in st.session_state:
-            st.session_state.llm_preset = LLMPreset.BALANCED
+    def compute_preset(config: LLMParameters) -> LLMPresetName:
+        print(f"Computing preset: {PRESET_CONFIGS}")
+        for preset_name, preset_config in PRESET_CONFIGS.items():
+            print(f"Checking preset {preset_name} {preset_config}")
+            if all(
+                getattr(config, key) == value
+                for key, value in preset_config.model_dump().items()
+            ):
+                print(f"returning {preset_name}")
+                return preset_name
+        return LLMPresetName.CUSTOM
+
+    @staticmethod
+    def render_settings_widget(session: Optional[ChatSession] = None):
+        """Render settings controls in the sidebar or dialog"""
+        st.subheader("🛠️ Model Settings")
+        print(
+            "------------------------------widget loaded-------------------------------"
+        )
+
         if "available_models" not in st.session_state:
+            print("initial setting of available_models")
             bedrock = BedrockService()
             st.session_state.available_models = bedrock.get_compatible_models()
 
-    @staticmethod
-    def render_settings_widget():
-        """Render settings controls in the sidebar or dialog"""
-        st.subheader("🛠️ Model Settings")
+        if (
+            "temp_llm_config" not in st.session_state
+            or st.session_state.temp_llm_config is None
+        ):
+            if session:
+                st.session_state.temp_llm_config = session.config
+            else:
+                st.session_state.temp_llm_config = st.session_state.llm.get_config()
+            print(
+                f"initial setting of st.session_state.temp_llm_config to {st.session_state.temp_llm_config}"
+            )
 
-        # Initialize temp_llm_config if it doesn't exist
-        if "temp_llm_config" not in st.session_state:
-            st.session_state.temp_llm_config = st.session_state.llm_config
+        if "llm_preset" not in st.session_state or st.session_state.llm_preset is None:
+            st.session_state.llm_preset = SettingsManager.compute_preset(
+                st.session_state.temp_llm_config.get_parameters()
+            )
+            print(f"computed preset: {st.session_state.llm_preset}")
+
+        if (
+            "temp_llm_preset" not in st.session_state
+            or st.session_state.temp_llm_preset is None
+        ):
+            st.session_state.temp_llm_preset = st.session_state.llm_preset
+            print(
+                f"initial setting of st.session_state.temp_llm_preset to {st.session_state.temp_llm_preset}"
+            )
+
+        st.json(
+            st.session_state.temp_llm_config.model_dump(),
+        )
 
         # Display currently selected model
         current_model = next(
@@ -89,13 +96,17 @@ class SettingsManager:
             ),
             None,
         )
-        if current_model:
-            st.markdown(f"**Currently Selected Model:** {current_model.model_id}")
-            if current_model.model_name:
-                st.markdown(f"*{current_model.model_name}*")
+        # if current_model:
+        #     st.markdown(f"**Currently Selected Model:** {current_model.model_id}")
+        #     if current_model.model_name:
+        #         st.markdown(f"*{current_model.model_name}*")
 
         # Model selector in an expander
         with st.expander("Change Model", expanded=False):
+            # TODO add refresh to get latest Bedrock models
+            # bedrock = BedrockService()
+            # st.session_state.available_models = bedrock.get_compatible_models()
+
             # Group models by provider
             providers = {}
             for model in st.session_state.available_models:
@@ -132,64 +143,149 @@ class SettingsManager:
                                     else "secondary"
                                 ),
                             ):
-                                st.session_state.temp_llm_config = LLMConfig(
-                                    model_id=model.model_id,
-                                    temperature=st.session_state.temp_llm_config.temperature,
-                                    max_output_tokens=BedrockService.get_max_output_tokens(
-                                        model.model_id
-                                    ),
-                                    region_name=st.session_state.temp_llm_config.region_name,
+                                st.session_state.temp_llm_config.model_id = (
+                                    model.model_id
                                 )
-                                # st.rerun()
+                                if (
+                                    st.session_state.temp_llm_config.parameters.max_output_tokens
+                                ):
+                                    st.session_state.temp_llm_config.parameters.max_output_tokens = min(
+                                        st.session_state.temp_llm_config.parameters.max_output_tokens,
+                                        BedrockService.get_max_output_tokens(
+                                            model_id=model.model_id
+                                        ),
+                                    )
 
         st.divider()
 
+        # print(f"temp_llm_preset: {st.session_state.temp_llm_preset}")
+        # print(
+        #     f"first render? index = {list(LLMPresetName).index(st.session_state.temp_llm_preset)}"
+        # )
         # Preset selector
-        preset = st.selectbox(
+        preset: LLMPresetName = st.selectbox(
             "Preset Configuration",
-            options=list(LLMPreset),
+            options=list(LLMPresetName),
             format_func=lambda x: x.value,
             key="settings_preset",
-            index=list(LLMPreset).index(st.session_state.llm_preset),
+            index=list(LLMPresetName).index(st.session_state.llm_preset),
+            help="Select a preset configuration for the model settings",
         )
+        # print("trying widget key = widget key...")
+        # st.session_state.settings_preset = st.session_state.settings_preset
 
-        if preset != st.session_state.llm_preset:
-            if preset != LLMPreset.CUSTOM:
-                st.session_state.temp_llm_config.temperature = (
-                    SettingsManager.PRESET_CONFIGS[preset]["temperature"]
-                )
+        # print(f'selectbox key: {st.session_state["settings_preset"]}')
+        # print(f"selectbox val: {preset}")
+        if preset != st.session_state.temp_llm_preset:
+            # print(f"setting temp preset now to {preset}")
+            if preset != LLMPresetName.CUSTOM:
+                # set config values to preset values
+                st.session_state.temp_llm_config.parameters = PRESET_CONFIGS[
+                    preset
+                ].model_copy()
             st.session_state.temp_llm_preset = preset
+            print(
+                f"after setting temp_llm_preset {st.session_state.temp_llm_preset} = preset {preset}"
+            )
 
         # Show current settings with option to modify
-        with st.expander("Advanced Settings"):
-            config = st.session_state.temp_llm_config
+        with st.expander("Advanced Settings", expanded=preset == LLMPresetName.CUSTOM):
+            config: LLMConfig = st.session_state.temp_llm_config
 
+            print(f"temp from config: {float(config.parameters.temperature)}")
+            # Temperature control
+            use_temp = st.checkbox(
+                "Use Temperature", value=config.parameters.temperature is not None
+            )
             new_temp = st.slider(
                 "Temperature",
                 min_value=0.0,
                 max_value=1.0,
-                value=float(config.temperature),
+                value=float(config.parameters.temperature),
                 step=0.1,
                 help="Higher values make the output more random, lower values more deterministic",
+                disabled=not use_temp,
             )
+            if use_temp:
+                print(f"new_temp: {new_temp} | old {config.parameters.temperature}")
+                st.session_state.temp_llm_config.parameters.temperature = new_temp
+                st.session_state.temp_llm_preset = LLMPresetName.CUSTOM
+            else:
+                new_temp = None
 
+            print(f"max_tokens from config: {config.parameters.max_output_tokens}")
+            use_max_tokens = st.checkbox(
+                "Use Max Tokens", value=config.parameters.max_output_tokens is not None
+            )
+            # if use_max_tokens:
             new_max_tokens = st.number_input(
                 "Max Output Tokens",
                 min_value=1,
                 max_value=BedrockService.get_max_output_tokens(config.model_id),
-                value=config.max_output_tokens
+                value=config.parameters.max_output_tokens
                 or BedrockService.get_max_output_tokens(config.model_id),
                 help="Maximum number of tokens in the response",
+                disabled=not use_max_tokens,
             )
+            if use_max_tokens:
+                # and new_max_tokens != config.parameters.max_output_tokens
+                print(
+                    f"new_max_tokens: {new_max_tokens} | old {config.parameters.max_output_tokens}"
+                )
+                st.session_state.temp_llm_config.parameters.max_output_tokens = (
+                    new_max_tokens
+                )
+                st.session_state.temp_llm_preset = LLMPresetName.CUSTOM
 
+            print(f"top_p from config: {config.parameters.top_p}")
+            use_top_p = st.checkbox(
+                "Use Top P", value=config.parameters.top_p is not None
+            )
+            # if use_top_p:
             new_top_p = st.slider(
                 "Top P",
                 min_value=0.0,
                 max_value=1.0,
-                value=config.top_p or 1.0,
+                value=config.parameters.top_p or 1.0,
                 step=0.01,
                 help="The percentage of most-likely candidates that the model considers for the next token",
+                disabled=not use_top_p,
             )
+            if use_top_p:
+                print(f"new_top_p: {new_top_p} | old {config.parameters.top_p}")
+                st.session_state.temp_llm_config.parameters.top_p = new_top_p
+                st.session_state.temp_llm_preset = LLMPresetName.CUSTOM
+
+            new_top_k = None
+            if "anthropic" in config.model_id.lower():
+                use_top_k = st.checkbox(
+                    "Use Top K", value=config.parameters.top_k is not None
+                )
+                if use_top_k:
+                    new_top_k = st.number_input(
+                        "Top K",
+                        min_value=1,
+                        max_value=500,
+                        value=config.parameters.top_k or 250,
+                        help="The number of most-likely candidates that the model considers for the next token (Anthropic models only)",
+                        disabled=config.parameters.top_k is None,
+                    )
+
+                    print(f"new_top_k: {new_top_k} | old {config.parameters.top_k}")
+                    st.session_state.temp_llm_config.parameters.top_k = new_top_k
+                    st.session_state.temp_llm_preset = LLMPresetName.CUSTOM
+            use_system = st.checkbox(
+                "Use System Prompt", value=config.system is not None
+            )
+            if use_system:
+                new_system = st.text_area(
+                    "System Prompt",
+                    value=config.system or "",
+                    help="Optional system prompt to provide context or instructions for the model",
+                    disabled=config.system is None,
+                )
+                # if new_system != config.system:
+                st.session_state.temp_llm_config.system = new_system
 
             new_stop_sequences = st.text_input(
                 "Stop Sequences",
@@ -199,80 +295,33 @@ class SettingsManager:
             new_stop_sequences = [
                 seq.strip() for seq in new_stop_sequences if seq.strip()
             ]
-
-            new_top_k = None
-            if "anthropic" in config.model_id.lower():
-                new_top_k = st.number_input(
-                    "Top K",
-                    min_value=1,
-                    max_value=500,
-                    value=config.top_k or 250,
-                    help="The number of most-likely candidates that the model considers for the next token (Anthropic models only)",
-                )
-
-            new_system = st.text_area(
-                "System Prompt",
-                value=config.system or "",
-                help="Optional system prompt to provide context or instructions for the model",
-            )
-
-            new_disable_streaming = st.checkbox(
-                "Disable Streaming",
-                value=config.disable_streaming,
-                help="Disable streaming for this model",
-            )
-
-            # Add UI elements for other new parameters as needed
-
-            # Update temp_llm_config with new values
-            if (
-                new_temp != config.temperature
-                or new_max_tokens != config.max_output_tokens
-                or new_top_p != config.top_p
-                or new_stop_sequences != config.stop_sequences
-                or (new_top_k is not None and new_top_k != config.top_k)
-                or new_system != config.system
-                or new_disable_streaming != config.disable_streaming
-            ):
-                st.session_state.temp_llm_config = LLMConfig(
-                    model_id=config.model_id,
-                    temperature=new_temp,
-                    max_output_tokens=new_max_tokens,
-                    region_name=config.region_name,
-                    stop_sequences=new_stop_sequences,
-                    top_p=new_top_p,
-                    top_k=(
-                        new_top_k if "anthropic" in config.model_id.lower() else None
-                    ),
-                    system=new_system,
-                    disable_streaming=new_disable_streaming,
-                    # Include other new parameters here
-                )
-                st.session_state.temp_llm_preset = LLMPreset.CUSTOM
+            # if new_stop_sequences != config.stop_sequences:
+            st.session_state.temp_llm_config.stop_sequences = new_stop_sequences
 
         # Show Apply button
+        # Add checkbox for setting as default
+        set_as_default = st.checkbox("Set as default configuration", value=False)
+        success_plecholder = st.empty()
         if st.button("Apply Settings", type="primary"):
-            # Apply temporary settings to actual settings
-            st.session_state.llm_config = st.session_state.temp_llm_config
-            st.session_state.llm_preset = st.session_state.temp_llm_preset
-
-            # Recreate LLM with new settings
-            additional_model_request_fields = {}
-            if st.session_state.llm_config.top_k:
-                additional_model_request_fields["top_k"] = (
-                    st.session_state.llm_config.top_k
+            if session:
+                print(
+                    f"Saving config to session {session.session_id}: { st.session_state.temp_llm_config}"
                 )
+                session.config = st.session_state.temp_llm_config
+                storage: StorageInterface = st.session_state.storage
+                storage.update_session(session=session)
 
-            st.session_state.llm = ChatBedrockConverse(
-                region_name=st.session_state.llm_config.region_name,
-                model=st.session_state.llm_config.model_id,
-                temperature=st.session_state.llm_config.temperature,
-                max_tokens=st.session_state.llm_config.max_output_tokens,
-                stop=st.session_state.llm_config.stop_sequences,
-                top_p=st.session_state.llm_config.top_p,
-                additional_model_request_fields=additional_model_request_fields,
-            )
-            st.success("Settings applied successfully!")
+            st.session_state.llm.update_config(st.session_state.temp_llm_config)
+
+            if set_as_default:
+                LLMConfig.set_default(st.session_state.temp_llm_config)
+
+            st.session_state.temp_llm_preset = None
+            st.session_state.llm_preset = None
+            st.session_state.temp_llm_config = None
+            with success_plecholder:
+                st.success("Settings applied successfully!")
+            time.sleep(1)
             st.rerun()
 
 

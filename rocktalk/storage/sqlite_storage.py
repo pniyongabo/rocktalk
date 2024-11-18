@@ -5,10 +5,12 @@ from pathlib import Path
 from typing import List
 
 from models.interfaces import ChatMessage, ChatSession
+from config.settings import AppConfig, LLMConfig
+from models.storage_interface import StorageInterface
 from utils.datetime_utils import format_datetime, parse_datetime
 
 
-class SQLiteChatStorage:
+class SQLiteChatStorage(StorageInterface):
     def __init__(self, db_path: str = "chat_database.db") -> None:
         # Ensure database directory exists
         Path(db_path).parent.mkdir(exist_ok=True, parents=True)
@@ -37,7 +39,8 @@ class SQLiteChatStorage:
                     title TEXT NOT NULL,
                     created_at TIMESTAMP NOT NULL,
                     last_active TIMESTAMP NOT NULL,
-                    metadata TEXT
+                    metadata TEXT,
+                    config TEXT NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS messages (
@@ -66,14 +69,14 @@ class SQLiteChatStorage:
                 # ON messages(content);
             )
 
-    def store_session(self, session: ChatSession) -> ChatSession:
+    def store_session(self, session: ChatSession) -> None:
 
         with self.get_connection() as conn:
             conn.execute(
                 """
                 INSERT INTO sessions
-                (session_id, title, created_at, last_active, metadata)
-                VALUES (?, ?, ?, ?, ?)
+                (session_id, title, created_at, last_active, metadata, config)
+                VALUES (?, ?, ?, ?, ?, ?)
             """,
                 (
                     session.session_id,
@@ -81,9 +84,26 @@ class SQLiteChatStorage:
                     format_datetime(session.created_at),
                     format_datetime(session.last_active),
                     json.dumps(session.metadata),
+                    session.config.model_dump_json(),
                 ),
             )
-        return session
+
+    def update_session(self, session: ChatSession) -> None:
+        with self.get_connection() as conn:
+            conn.execute(
+                """
+                UPDATE sessions
+                SET title = ?, last_active = ?, metadata = ?, config = ?
+                WHERE session_id = ?
+            """,
+                (
+                    session.title,
+                    format_datetime(session.last_active),
+                    json.dumps(session.metadata),
+                    json.dumps(session.config.model_dump()),
+                    session.session_id,
+                ),
+            )
 
     def save_message(self, message: ChatMessage) -> None:
         """Save a message to a chat session and update last_active"""
@@ -124,7 +144,7 @@ class SQLiteChatStorage:
                 (session_id, from_index),
             )
 
-    def delete_message(self, session_id: str, message_index: int) -> None:
+    def delete_message(self, session_id: str, index: int) -> None:
         """Delete a specific message by its index from a chat session."""
         with self.get_connection() as conn:
             try:
@@ -137,13 +157,13 @@ class SQLiteChatStorage:
                     DELETE FROM messages
                     WHERE session_id = ? AND message_index = ?
                     """,
-                    (session_id, message_index),
+                    (session_id, index),
                 )
 
                 # Check if a message was actually deleted
                 if result.rowcount == 0:
                     raise ValueError(
-                        f"No message found with index {message_index} in session {session_id}"
+                        f"No message found with index {index} in session {session_id}"
                     )
 
                 # Update indexes of subsequent messages
@@ -153,7 +173,7 @@ class SQLiteChatStorage:
                     SET message_index = message_index - 1
                     WHERE session_id = ? AND message_index > ?
                     """,
-                    (session_id, message_index),
+                    (session_id, index),
                 )
 
                 # Update session's last_active timestamp
@@ -206,9 +226,14 @@ class SQLiteChatStorage:
                 if session_data.get("last_message")
                 else None
             ),
+            config=(
+                LLMConfig.model_validate_json(session_data["config"])
+                if session_data.get("config")
+                else LLMConfig.get_default()
+            ),
         )
 
-    def get_session_messages(self, session_id: str) -> List[ChatMessage]:
+    def get_messages(self, session_id: str) -> List[ChatMessage]:
         """Get all messages for a session"""
         with self.get_connection() as conn:
             cursor = conn.execute(
@@ -263,20 +288,13 @@ class SQLiteChatStorage:
             )
             return [self._deserialize_session(row) for row in cursor.fetchall()]
 
-    def get_session_info(self, session_id: str) -> ChatSession:
-        """Get detailed information about a specific session"""
+    def get_session(self, session_id: str) -> ChatSession:
+        """Get a specific chat session"""
         with self.get_connection() as conn:
             cursor = conn.execute(
                 """
-                SELECT
-                    s.*,
-                    MIN(m.timestamp) as first_message,
-                    MAX(m.timestamp) as last_message,
-                    COUNT(m.message_id) as message_count
-                FROM sessions s
-                LEFT JOIN messages m ON s.session_id = m.session_id
-                WHERE s.session_id = ?
-                GROUP BY s.session_id
+                SELECT * FROM sessions
+                WHERE session_id = ?
                 """,
                 (session_id,),
             )
@@ -353,6 +371,10 @@ class SQLiteChatStorage:
 
                 # Delete all sessions
                 conn.execute("DELETE FROM sessions")
+
+                # # also delete the tables
+                # conn.execute("DROP TABLE IF EXISTS sessions")
+                # conn.execute("DROP TABLE IF EXISTS messages")
 
                 # Commit the transaction
                 conn.execute("COMMIT")

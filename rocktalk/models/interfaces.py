@@ -1,15 +1,75 @@
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Protocol
+from typing import Any, Dict, List, Literal, Optional, Protocol, Sequence
 
 import streamlit as st
 from langchain.schema import AIMessage, BaseMessage, HumanMessage
 from PIL.ImageFile import ImageFile
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 from streamlit_chat_prompt import ImageData, PromptReturn, prompt
 from utils.image_utils import MAX_IMAGE_WIDTH, image_from_b64_image
 from utils.streamlit_utils import close_dialog
+
+
+class LLMParameters(BaseModel):
+    temperature: float
+    max_output_tokens: Optional[int] = None
+    top_p: Optional[float] = None
+    top_k: Optional[int] = None  # Additional parameter for Anthropic models
+
+
+class LLMPresetName(Enum):
+    BALANCED = "Balanced"
+    DETERMINISTIC = "Deterministic"
+    CREATIVE = "Creative"
+    CUSTOM = "Custom"
+
+
+PRESET_CONFIGS: Dict[LLMPresetName, LLMParameters] = {
+    LLMPresetName.DETERMINISTIC: LLMParameters(temperature=0.0),
+    LLMPresetName.CREATIVE: LLMParameters(temperature=0.9),
+    LLMPresetName.BALANCED: LLMParameters(temperature=0.5),
+}
+
+
+_DEFAULT_LLM_CONFIG: Optional["LLMConfig"] = None
+
+
+class LLMConfig(BaseModel):
+    model_id: str
+    region_name: str
+    parameters: LLMParameters
+    stop_sequences: List[str] = Field(default_factory=list)
+    system: Optional[str] = None
+    # guardrail_config: Optional[Dict[str, Any]] = None
+    # additional_model_request_fields: Optional[Dict[str, Any]] = None
+    # additional_model_response_field_paths: Optional[List[str]] = None
+    # disable_streaming: bool = False
+    # supports_tool_choice_values: Optional[Sequence[Literal["auto", "any", "tool"]]] = (
+    #     None
+    # )
+
+    def get_parameters(self) -> LLMParameters:
+        return self.parameters
+
+    @staticmethod
+    def get_default() -> "LLMConfig":
+        global _DEFAULT_LLM_CONFIG
+        if _DEFAULT_LLM_CONFIG is None:
+            preset_parm = PRESET_CONFIGS[LLMPresetName.BALANCED]
+            _DEFAULT_LLM_CONFIG = LLMConfig(
+                model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+                region_name="us-west-2",
+                parameters=preset_parm,
+            )
+
+        return _DEFAULT_LLM_CONFIG
+
+    @staticmethod
+    def set_default(llm_config: "LLMConfig") -> None:
+        global _DEFAULT_LLM_CONFIG
+        _DEFAULT_LLM_CONFIG = llm_config.model_copy()
 
 
 class TurnState(Enum):
@@ -177,6 +237,7 @@ class ChatSession(BaseModel):
     message_count: Optional[int] = None
     first_message: Optional[datetime] = None
     last_message: Optional[datetime] = None
+    config: LLMConfig = Field(default_factory=LLMConfig.get_default)
 
     @staticmethod
     def create(
@@ -184,6 +245,7 @@ class ChatSession(BaseModel):
         metadata: Optional[Dict] = None,
         created_at: Optional[datetime] = None,
         last_active: Optional[datetime] = None,
+        config: Optional[LLMConfig] = None,
     ) -> "ChatSession":
         """Create a new chat session"""
         session_id = str(uuid.uuid4())
@@ -197,6 +259,7 @@ class ChatSession(BaseModel):
             metadata=metadata or {},
             created_at=created_at,
             last_active=last_active,
+            config=config or st.session_state.llm.get_config(),
         )
 
 

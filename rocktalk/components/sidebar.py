@@ -1,13 +1,16 @@
 import streamlit as st
-from storage.storage_interface import StorageInterface
+from models.storage_interface import StorageInterface
 from utils.date_utils import create_date_masks
-
+from .chat import ChatInterface
 from .dialogs import interface_options, session_settings
 
 
 class Sidebar:
-    def __init__(self, storage: StorageInterface):
-        self.storage = storage
+    storage: StorageInterface
+
+    def __init__(self, chat_interface: ChatInterface):
+        self.storage: StorageInterface = st.session_state.storage
+        self.chat_interface = chat_interface
 
     def render(self):
         with st.sidebar:
@@ -16,8 +19,7 @@ class Sidebar:
                 col1, col2 = st.columns([0.5, 0.5], gap="small")
                 with col1:
                     if st.button("New Chat", type="primary"):
-                        st.session_state.messages = []
-                        st.session_state.current_session_id = None
+                        self.chat_interface.clear_session()  # Use this instead
                         st.rerun()
                 with col2:
                     if st.button("Settings"):
@@ -52,16 +54,8 @@ class Sidebar:
                                     key=f"session_{df_session['session_id']}",
                                     use_container_width=True,
                                 ):
-                                    st.session_state.current_session_id = df_session[
-                                        "session_id"
-                                    ]
-                                    messages = self.storage.get_session_messages(
+                                    self.chat_interface.load_session(
                                         df_session["session_id"]
-                                    )
-                                    st.session_state.messages = (
-                                        self.storage.get_session_messages(
-                                            df_session["session_id"]
-                                        )
                                     )
                                     st.rerun()
 

@@ -27,7 +27,7 @@ def create_date_masks(
             - The processed DataFrame of sessions
     """
     # Convert the list of ChatSession objects to a DataFrame
-    df_sessions = pd.DataFrame([session.dict() for session in recent_sessions])
+    df_sessions = pd.DataFrame([session.model_dump() for session in recent_sessions])
 
     # Ensure datetime columns are in the correct format
     df_sessions["last_active"] = pd.to_datetime(df_sessions["last_active"])
