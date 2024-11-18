@@ -29,6 +29,40 @@ class AppConfig(BaseModel):
 
 
 class SettingsManager:
+    @staticmethod
+    def set_preset_values():
+        # print(args, kwargs)
+        # print(st.session_state.settings_preset)
+        if st.session_state.settings_preset != LLMPresetName.CUSTOM:
+            # set config values to preset values
+            st.session_state.temp_llm_config.parameters = PRESET_CONFIGS[
+                st.session_state.settings_preset
+            ].model_copy()
+        st.session_state.temp_llm_preset = st.session_state.settings_preset
+        # print(
+        #     f"after setting temp_llm_preset {st.session_state.temp_llm_preset} = preset {st.session_state.settings_preset}"
+        # )
+
+    @staticmethod
+    def reorder_model_providers():
+        st.session_state.ordered_providers = sorted(
+            st.session_state.model_providers.keys(),
+            key=lambda x: x != st.session_state.current_provider,
+        )
+
+    @staticmethod
+    def set_temp_llm_config_model(provider: str, model_id: str):
+        # print(f"set model to {model_id}")
+
+        st.session_state.temp_llm_config.model_id = model_id
+        # print(f"temp_llm_config model: {st.session_state.temp_llm_config.model_id}")
+
+        if st.session_state.temp_llm_config.parameters.max_output_tokens:
+            st.session_state.temp_llm_config.parameters.max_output_tokens = min(
+                st.session_state.temp_llm_config.parameters.max_output_tokens,
+                BedrockService.get_max_output_tokens(model_id=model_id),
+            )
+        st.session_state.current_provider = provider
 
     @staticmethod
     def compute_preset(config: LLMParameters) -> LLMPresetName:
@@ -47,9 +81,9 @@ class SettingsManager:
     def render_settings_widget(session: Optional[ChatSession] = None):
         """Render settings controls in the sidebar or dialog"""
         st.subheader("🛠️ Model Settings")
-        print(
-            "------------------------------widget loaded-------------------------------"
-        )
+        # print(
+        #     "------------------------------widget loaded-------------------------------"
+        # )
 
         if "available_models" not in st.session_state:
             print("initial setting of available_models")
@@ -64,24 +98,29 @@ class SettingsManager:
                 st.session_state.temp_llm_config = session.config
             else:
                 st.session_state.temp_llm_config = st.session_state.llm.get_config()
-            print(
-                f"initial setting of st.session_state.temp_llm_config to {st.session_state.temp_llm_config}"
-            )
+            # print(
+            #     f"initial setting of st.session_state.temp_llm_config to {st.session_state.temp_llm_config}"
+            # )
 
         if "llm_preset" not in st.session_state or st.session_state.llm_preset is None:
             st.session_state.llm_preset = SettingsManager.compute_preset(
                 st.session_state.temp_llm_config.get_parameters()
             )
-            print(f"computed preset: {st.session_state.llm_preset}")
+            # print(f"computed preset: {st.session_state.llm_preset}")
 
         if (
             "temp_llm_preset" not in st.session_state
             or st.session_state.temp_llm_preset is None
         ):
             st.session_state.temp_llm_preset = st.session_state.llm_preset
-            print(
-                f"initial setting of st.session_state.temp_llm_preset to {st.session_state.temp_llm_preset}"
-            )
+            # print(
+            #     f"initial setting of st.session_state.temp_llm_preset to {st.session_state.temp_llm_preset}"
+            # )
+        if (
+            "providers_reorder" not in st.session_state
+            or st.session_state.providers_reorder is None
+        ):
+            st.session_state.providers_reorder = True
 
         st.json(
             st.session_state.temp_llm_config.model_dump(),
@@ -107,33 +146,50 @@ class SettingsManager:
             # bedrock = BedrockService()
             # st.session_state.available_models = bedrock.get_compatible_models()
 
-            # Group models by provider
-            providers = {}
-            for model in st.session_state.available_models:
-                provider = model.provider_name or "Other"
-                if provider not in providers:
-                    providers[provider] = []
-                providers[provider].append(model)
+            if (
+                "model_providers" not in st.session_state
+                or st.session_state.model_providers is None
+            ):
+                # Group models by provider
+                providers = {}
+                for model in st.session_state.available_models:
+                    provider = model.provider_name or "Other"
+                    if provider not in providers:
+                        providers[provider] = []
+                    providers[provider].append(model)
+                st.session_state.model_providers = providers
 
-            # Reorder providers to put the current model's provider first
-            current_provider = current_model.provider_name if current_model else None
-            ordered_providers = sorted(
-                providers.keys(), key=lambda x: x != current_provider
-            )
+            if (
+                "current_provider" not in st.session_state
+                or st.session_state.current_provider is None
+            ):
+                # Reorder providers to put the current model's provider first
+                st.session_state.current_provider = (
+                    current_model.provider_name if current_model else None
+                )
+            if (
+                "ordered_providers" not in st.session_state
+                or st.session_state.ordered_providers is None
+            ):
+                # only order the providers once based on current model, otherwise the tabs will move on user causing bad UX
+                SettingsManager.reorder_model_providers()
 
             # Create provider tabs
-            provider_tabs = st.tabs(ordered_providers)
-
-            for tab, provider in zip(provider_tabs, ordered_providers):
+            provider_tabs = st.tabs(st.session_state.ordered_providers)
+            # print("displaying models")
+            for tab, provider in zip(provider_tabs, st.session_state.ordered_providers):
                 with tab:
-                    for model in providers[provider]:
+                    for model in st.session_state.model_providers[provider]:
                         col1, col2 = st.columns([0.7, 0.3])
                         with col1:
                             st.markdown(f"**{model.model_id}**")
                             if model.model_name:
                                 st.markdown(f"*{model.model_name}*")
                         with col2:
-                            if st.button(
+                            # print(
+                            #     f'model {model.model_id}: {"primary" if model.model_id == st.session_state.temp_llm_config.model_id                                    else "secondary"}'
+                            # )
+                            st.button(
                                 "Select",
                                 key=f"select_{model.model_id}",
                                 type=(
@@ -142,21 +198,13 @@ class SettingsManager:
                                     == st.session_state.temp_llm_config.model_id
                                     else "secondary"
                                 ),
-                            ):
-                                st.session_state.temp_llm_config.model_id = (
-                                    model.model_id
-                                )
-                                if (
-                                    st.session_state.temp_llm_config.parameters.max_output_tokens
-                                ):
-                                    st.session_state.temp_llm_config.parameters.max_output_tokens = min(
-                                        st.session_state.temp_llm_config.parameters.max_output_tokens,
-                                        BedrockService.get_max_output_tokens(
-                                            model_id=model.model_id
-                                        ),
-                                    )
-
-        st.divider()
+                                on_click=SettingsManager.set_temp_llm_config_model,
+                                args=(
+                                    provider,
+                                    model.model_id,
+                                ),
+                            )
+        # st.divider()
 
         # print(f"temp_llm_preset: {st.session_state.temp_llm_preset}")
         # print(
@@ -170,23 +218,24 @@ class SettingsManager:
             key="settings_preset",
             index=list(LLMPresetName).index(st.session_state.llm_preset),
             help="Select a preset configuration for the model settings",
+            on_change=SettingsManager.set_preset_values,
         )
         # print("trying widget key = widget key...")
         # st.session_state.settings_preset = st.session_state.settings_preset
 
         # print(f'selectbox key: {st.session_state["settings_preset"]}')
         # print(f"selectbox val: {preset}")
-        if preset != st.session_state.temp_llm_preset:
-            # print(f"setting temp preset now to {preset}")
-            if preset != LLMPresetName.CUSTOM:
-                # set config values to preset values
-                st.session_state.temp_llm_config.parameters = PRESET_CONFIGS[
-                    preset
-                ].model_copy()
-            st.session_state.temp_llm_preset = preset
-            print(
-                f"after setting temp_llm_preset {st.session_state.temp_llm_preset} = preset {preset}"
-            )
+        # if preset != st.session_state.temp_llm_preset:
+        # print(f"setting temp preset now to {preset}")
+        # if preset != LLMPresetName.CUSTOM:
+        #     # set config values to preset values
+        #     st.session_state.temp_llm_config.parameters = PRESET_CONFIGS[
+        #         preset
+        #     ].model_copy()
+        # st.session_state.temp_llm_preset = preset
+        # print(
+        #     f"after setting temp_llm_preset {st.session_state.temp_llm_preset} = preset {preset}"
+        # )
 
         # Show current settings with option to modify
         with st.expander("Advanced Settings", expanded=preset == LLMPresetName.CUSTOM):
@@ -207,13 +256,13 @@ class SettingsManager:
                 disabled=not use_temp,
             )
             if use_temp:
-                print(f"new_temp: {new_temp} | old {config.parameters.temperature}")
+                # print(f"new_temp: {new_temp} | old {config.parameters.temperature}")
                 st.session_state.temp_llm_config.parameters.temperature = new_temp
                 st.session_state.temp_llm_preset = LLMPresetName.CUSTOM
             else:
                 new_temp = None
 
-            print(f"max_tokens from config: {config.parameters.max_output_tokens}")
+            # print(f"max_tokens from config: {config.parameters.max_output_tokens}")
             use_max_tokens = st.checkbox(
                 "Use Max Tokens", value=config.parameters.max_output_tokens is not None
             )
@@ -229,15 +278,15 @@ class SettingsManager:
             )
             if use_max_tokens:
                 # and new_max_tokens != config.parameters.max_output_tokens
-                print(
-                    f"new_max_tokens: {new_max_tokens} | old {config.parameters.max_output_tokens}"
-                )
+                # print(
+                #     f"new_max_tokens: {new_max_tokens} | old {config.parameters.max_output_tokens}"
+                # )
                 st.session_state.temp_llm_config.parameters.max_output_tokens = (
                     new_max_tokens
                 )
                 st.session_state.temp_llm_preset = LLMPresetName.CUSTOM
 
-            print(f"top_p from config: {config.parameters.top_p}")
+            # print(f"top_p from config: {config.parameters.top_p}")
             use_top_p = st.checkbox(
                 "Use Top P", value=config.parameters.top_p is not None
             )
@@ -252,7 +301,7 @@ class SettingsManager:
                 disabled=not use_top_p,
             )
             if use_top_p:
-                print(f"new_top_p: {new_top_p} | old {config.parameters.top_p}")
+                # print(f"new_top_p: {new_top_p} | old {config.parameters.top_p}")
                 st.session_state.temp_llm_config.parameters.top_p = new_top_p
                 st.session_state.temp_llm_preset = LLMPresetName.CUSTOM
 
@@ -304,9 +353,9 @@ class SettingsManager:
         success_plecholder = st.empty()
         if st.button("Apply Settings", type="primary"):
             if session:
-                print(
-                    f"Saving config to session {session.session_id}: { st.session_state.temp_llm_config}"
-                )
+                # print(
+                #     f"Saving config to session {session.session_id}: { st.session_state.temp_llm_config}"
+                # )
                 session.config = st.session_state.temp_llm_config
                 storage: StorageInterface = st.session_state.storage
                 storage.update_session(session=session)
@@ -319,6 +368,10 @@ class SettingsManager:
             st.session_state.temp_llm_preset = None
             st.session_state.llm_preset = None
             st.session_state.temp_llm_config = None
+            st.session_state.model_providers = None
+            st.session_state.current_provider = None
+            st.session_state.ordered_providers = None
+            # st.session_state.providers_reorder = None
             with success_plecholder:
                 st.success("Settings applied successfully!")
             time.sleep(1)
