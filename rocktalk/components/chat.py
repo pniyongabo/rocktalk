@@ -298,6 +298,7 @@ class ChatInterface:
                     new_session: ChatSession = ChatSession.create(
                         title=title, config=self.llm.get_config().model_copy()
                     )
+                    st.session_state.current_session_id = new_session.session_id
                     self.storage.store_session(new_session)
                     # Update session_id for all messages and save
                     for msg in st.session_state.messages:

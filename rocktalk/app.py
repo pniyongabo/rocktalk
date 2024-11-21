@@ -22,6 +22,7 @@ st.set_page_config(
     page_icon=app_config.page_icon,
     layout=app_config.layout,
 )
+
 st.subheader(
     f"{app_config.page_title}: Powered by AWS Bedrock 🪨 + LangChain 🦜️🔗 + Streamlit 👑"
 )
@@ -33,7 +34,7 @@ if "storage" not in st.session_state:
     )  # StorageInterface
 
 
-# # Initialize LLM object in session state
+# Initialize LLM object in session state
 if "llm" not in st.session_state:
     llm: LLMInterface = BedrockLLM()
     st.session_state.llm = llm
