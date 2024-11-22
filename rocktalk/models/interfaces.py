@@ -104,7 +104,7 @@ class ChatMessage(BaseModel):
         prompt_return = prompt(
             "edit prompt",
             key=f"edit_prompt_{id(self)}",
-            placeholder=previous_prompt.message or "",
+            placeholder=previous_prompt.text or "",
             main_bottom=False,
             default=previous_prompt,
         )
@@ -163,14 +163,14 @@ class ChatMessage(BaseModel):
 
     @staticmethod
     def create_from_prompt(
-        user_input: PromptReturn,
+        prompt_data: PromptReturn,
         session_id: Optional[str] = None,
         index: Optional[int] = None,
     ) -> "ChatMessage":
         """Create ChatMessage from user input.
 
         Args:
-            user_input: User input containing message and optional images.
+            prompt_data: User input containing message and optional images.
             session_id: Optional session ID for the message.
             index: Optional index for the message.
 
@@ -178,10 +178,10 @@ class ChatMessage(BaseModel):
             ChatMessage object containing the user input.
         """
         content = []
-        if user_input.message:
-            content.append({"type": "text", "text": user_input.message})
-        if user_input.images:
-            for image in user_input.images:
+        if prompt_data.text:
+            content.append({"type": "text", "text": prompt_data.text})
+        if prompt_data.images:
+            for image in prompt_data.images:
                 content.append(
                     {
                         "type": "image",
@@ -206,7 +206,7 @@ class ChatMessage(BaseModel):
         Returns:
             PromptReturn object containing the message text and any images.
         """
-        message = None
+        text = None
         images = []
 
         if isinstance(self.content, list):
@@ -223,9 +223,9 @@ class ChatMessage(BaseModel):
                             )
                         )
         elif isinstance(self.content, str):
-            message = self.content
+            text = self.content
 
-        return PromptReturn(message=message, images=images if images else None)
+        return PromptReturn(text=text, images=images if images else None)
 
 
 class ChatSession(BaseModel):

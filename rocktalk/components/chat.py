@@ -1,7 +1,7 @@
 """Chat interface module for handling user-AI conversations with support for text and images."""
 
 from datetime import datetime
-from typing import Optional
+from typing import Optional, cast
 
 import streamlit as st
 import streamlit.components.v1 as stcomponents
@@ -14,6 +14,7 @@ from models.interfaces import (
 from models.storage_interface import StorageInterface
 from streamlit_chat_prompt import PromptReturn, prompt
 from models.llm import LLMInterface
+from langchain_core.messages import AIMessage
 
 
 class ChatInterface:
@@ -186,7 +187,7 @@ class ChatInterface:
             )
 
             new_message = ChatMessage.create_from_prompt(
-                user_input=prompt_return,
+                prompt_data=prompt_return,
                 session_id=original_message.session_id,
                 index=original_message.index,
             )
@@ -205,33 +206,32 @@ class ChatInterface:
 
         Gets input from the chat prompt and processes it if provided.
         """
-        user_input: Optional[PromptReturn] = prompt(
+        chat_prompt_return: Optional[PromptReturn] = prompt(
             name="chat_input",
-            key="user_input",
+            key="main_prompt",
             placeholder="Hello!",
             disabled=False,
             max_image_size=5 * 1024 * 1024,
         )
 
-        if st.session_state.turn_state == TurnState.HUMAN_TURN:
-            if user_input:
-                human_message = ChatMessage.create_from_prompt(
-                    user_input=user_input,
-                    session_id=st.session_state.current_session_id,
-                )
+        if chat_prompt_return and st.session_state.turn_state == TurnState.HUMAN_TURN:
+            human_message: ChatMessage = ChatMessage.create_from_prompt(
+                prompt_data=chat_prompt_return,
+                session_id=st.session_state.current_session_id,
+            )
 
-                human_message.display()
-                st.session_state.scroll_div_index += 1
-                self._scroll_to_bottom()
+            human_message.display()
+            st.session_state.scroll_div_index += 1
+            self._scroll_to_bottom()
 
-                # Save to storage if we have a session, otherwise save later after session title is generated
-                if st.session_state.current_session_id:
-                    self.storage.save_message(message=human_message)
+            # Save to storage if we have a session, otherwise save later after session title is generated
+            if st.session_state.current_session_id:
+                self.storage.save_message(message=human_message)
 
-                st.session_state.messages.append(human_message)
+            st.session_state.messages.append(human_message)
 
-                # Set state for AI to respond
-                st.session_state.turn_state = TurnState.AI_TURN
+            # Set state for AI to respond
+            st.session_state.turn_state = TurnState.AI_TURN
 
     def _convert_messages_to_llm_format(self) -> list[BaseMessage]:
         """Convert stored ChatMessages to LLM format.
@@ -268,16 +268,38 @@ class ChatInterface:
 
             # Generate and display AI response
             with st.chat_message("assistant"):
+                usage_data = None
+                latency = None
+                stop_reason = None
                 message_placeholder = st.empty()
                 full_response = ""
                 self._scroll_to_bottom_streaming()
+                # print(f"starting stream with stop_it = {st.session_state.stop_it}")
                 for chunk in self.llm.stream(input=llm_messages):
+                    chunk = cast(AIMessage, chunk)
                     for item in chunk.content:
                         if isinstance(item, dict) and "text" in item:
                             text = item["text"]
                             full_response += text
                         message_placeholder.markdown(full_response + "▌")
 
+                    # Track metadata
+                    if chunk.response_metadata:
+                        if "stopReason" in chunk.response_metadata:
+                            stop_reason = chunk.response_metadata["stopReason"]
+                        if "metrics" in chunk.response_metadata:
+                            latency = chunk.response_metadata["metrics"].get(
+                                "latencyMs"
+                            )
+                    # Track usage data
+                    if hasattr(chunk, "usage_metadata") and chunk.usage_metadata:
+                        usage_data = chunk.usage_metadata
+                metadata = {
+                    "usage_data": usage_data,
+                    "latency_ms": latency,
+                    "stop_reason": stop_reason,
+                }
+                print(metadata)
                 message_placeholder.markdown(full_response)
 
                 # Create ChatMessage
