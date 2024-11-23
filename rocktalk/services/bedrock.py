@@ -33,7 +33,7 @@ DEFAULT_MAX_OUTPUT_TOKENS: int = 4096
 
 @dataclass
 class FoundationModelSummary:
-    model_id: str
+    bedrock_model_id: str
     provider_name: Optional[str] = None
     model_name: Optional[str] = None
     model_arn: Optional[str] = None
@@ -47,7 +47,7 @@ class FoundationModelSummary:
     @classmethod
     def from_dict(cls, data: FoundationModelSummaryTypeDef) -> "FoundationModelSummary":
         return cls(
-            model_id=data["modelId"],
+            bedrock_model_id=data["modelId"],
             provider_name=data.get("providerName"),
             model_name=data.get("modelName"),
             model_arn=data.get("modelArn"),
@@ -81,7 +81,7 @@ class BedrockService:
                 models,
                 key=lambda x: (
                     x.provider_name if x.provider_name else "",
-                    x.model_id,
+                    x.bedrock_model_id,
                 ),
             )
 
@@ -115,14 +115,14 @@ class BedrockService:
         ]
 
     @staticmethod
-    def get_max_output_tokens(model_id: str) -> int:
+    def get_max_output_tokens(bedrock_model_id: str) -> int:
         """
         Get the maximum number of output tokens for a specific model.
 
         Args:
-            model_id (str): The ID of the Bedrock model
+            bedrock_model_id (str): The ID of the Bedrock model
 
         Returns:
             int: The maximum number of output tokens for the model
         """
-        return KNOWN_MAX_OUTPUT_TOKENS.get(model_id, DEFAULT_MAX_OUTPUT_TOKENS)
+        return KNOWN_MAX_OUTPUT_TOKENS.get(bedrock_model_id, DEFAULT_MAX_OUTPUT_TOKENS)

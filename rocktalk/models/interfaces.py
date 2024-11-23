@@ -6,11 +6,11 @@ from typing import Any, Dict, List, Literal, Optional, Protocol, Sequence
 import streamlit as st
 from langchain.schema import AIMessage, BaseMessage, HumanMessage
 from PIL.ImageFile import ImageFile
-from pydantic import BaseModel, Field, PrivateAttr
+from pydantic import BaseModel, Field, PrivateAttr, ConfigDict
 from streamlit_chat_prompt import ImageData, PromptReturn, prompt
 from utils.image_utils import MAX_IMAGE_WIDTH, image_from_b64_image
 from utils.streamlit_utils import close_dialog
-
+from utils.log import logger
 
 class LLMParameters(BaseModel):
     temperature: float
@@ -37,11 +37,13 @@ _DEFAULT_LLM_CONFIG: Optional["LLMConfig"] = None
 
 
 class LLMConfig(BaseModel):
-    model_id: str
+    # model_config = ConfigDict(protected_namespaces=()) UserWarning: Field "bedrock_model_id" in LLMConfig has conflict with protected namespace "model_".
+    bedrock_model_id: str
     region_name: str
     parameters: LLMParameters
     stop_sequences: List[str] = Field(default_factory=list)
     system: Optional[str] = None
+
     # guardrail_config: Optional[Dict[str, Any]] = None
     # additional_model_request_fields: Optional[Dict[str, Any]] = None
     # additional_model_response_field_paths: Optional[List[str]] = None
@@ -59,7 +61,7 @@ class LLMConfig(BaseModel):
         if _DEFAULT_LLM_CONFIG is None:
             preset_parm = PRESET_CONFIGS[LLMPresetName.BALANCED]
             _DEFAULT_LLM_CONFIG = LLMConfig(
-                model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+                bedrock_model_id="anthropic.claude-3-sonnet-20240229-v1:0",
                 region_name="us-west-2",
                 parameters=preset_parm,
             )
@@ -97,6 +99,7 @@ class ChatMessage(BaseModel):
     @st.dialog("Edit Message")
     def edit_message(self):
         previous_prompt = self.to_prompt_return()
+        logger.info(previous_prompt)
         st.warning(
             "Editing message will re-run conversation from this point and will replace any existing conversation past this point!",
             icon="⚠️",
@@ -208,12 +211,12 @@ class ChatMessage(BaseModel):
         """
         text = None
         images = []
-
+        logger.info(self.content)
         if isinstance(self.content, list):
             for item in self.content:
                 if isinstance(item, dict):
                     if item["type"] == "text":
-                        message = item["text"]
+                        text = item["text"]
                     elif item["type"] == "image":
                         images.append(
                             ImageData(

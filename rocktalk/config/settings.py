@@ -51,16 +51,14 @@ class SettingsManager:
         )
 
     @staticmethod
-    def set_temp_llm_config_model(provider: str, model_id: str):
-        # print(f"set model to {model_id}")
+    def set_temp_llm_config_model(provider: str, bedrock_model_id: str):
+        # print(f"set model to {bedrock_model_id}")
 
-        st.session_state.temp_llm_config.model_id = model_id
-        # print(f"temp_llm_config model: {st.session_state.temp_llm_config.model_id}")
-
+        st.session_state.temp_llm_config.bedrock_model_id = bedrock_model_id
         if st.session_state.temp_llm_config.parameters.max_output_tokens:
             st.session_state.temp_llm_config.parameters.max_output_tokens = min(
                 st.session_state.temp_llm_config.parameters.max_output_tokens,
-                BedrockService.get_max_output_tokens(model_id=model_id),
+                BedrockService.get_max_output_tokens(bedrock_model_id=bedrock_model_id),
             )
         st.session_state.current_provider = provider
 
@@ -131,12 +129,12 @@ class SettingsManager:
             (
                 m
                 for m in st.session_state.available_models
-                if m.model_id == st.session_state.temp_llm_config.model_id
+                if m.bedrock_model_id == st.session_state.temp_llm_config.bedrock_model_id
             ),
             None,
         )
         # if current_model:
-        #     st.markdown(f"**Currently Selected Model:** {current_model.model_id}")
+        #     st.markdown(f"**Currently Selected Model:** {current_model.bedrock_model_id}")
         #     if current_model.model_name:
         #         st.markdown(f"*{current_model.model_name}*")
 
@@ -180,28 +178,29 @@ class SettingsManager:
             for tab, provider in zip(provider_tabs, st.session_state.ordered_providers):
                 with tab:
                     for model in st.session_state.model_providers[provider]:
+                        st.divider()
                         col1, col2 = st.columns([0.7, 0.3])
                         with col1:
-                            st.markdown(f"**{model.model_id}**")
+                            st.markdown(f"**{model.bedrock_model_id}**")
                             if model.model_name:
                                 st.markdown(f"*{model.model_name}*")
                         with col2:
                             # print(
-                            #     f'model {model.model_id}: {"primary" if model.model_id == st.session_state.temp_llm_config.model_id                                    else "secondary"}'
+                            #     f'model {model.bedrock_model_id}: {"primary" if model.bedrock_model_id == st.session_state.temp_llm_config.bedrock_model_id                                    else "secondary"}'
                             # )
                             st.button(
                                 "Select",
-                                key=f"select_{model.model_id}",
+                                key=f"select_{model.bedrock_model_id}",
                                 type=(
                                     "primary"
-                                    if model.model_id
-                                    == st.session_state.temp_llm_config.model_id
+                                    if model.bedrock_model_id
+                                    == st.session_state.temp_llm_config.bedrock_model_id
                                     else "secondary"
                                 ),
                                 on_click=SettingsManager.set_temp_llm_config_model,
                                 args=(
                                     provider,
-                                    model.model_id,
+                                    model.bedrock_model_id,
                                 ),
                             )
         # st.divider()
@@ -270,9 +269,9 @@ class SettingsManager:
             new_max_tokens = st.number_input(
                 "Max Output Tokens",
                 min_value=1,
-                max_value=BedrockService.get_max_output_tokens(config.model_id),
+                max_value=BedrockService.get_max_output_tokens(config.bedrock_model_id),
                 value=config.parameters.max_output_tokens
-                or BedrockService.get_max_output_tokens(config.model_id),
+                or BedrockService.get_max_output_tokens(config.bedrock_model_id),
                 help="Maximum number of tokens in the response",
                 disabled=not use_max_tokens,
             )
@@ -306,7 +305,7 @@ class SettingsManager:
                 st.session_state.temp_llm_preset = LLMPresetName.CUSTOM
 
             new_top_k = None
-            if "anthropic" in config.model_id.lower():
+            if "anthropic" in config.bedrock_model_id.lower():
                 use_top_k = st.checkbox(
                     "Use Top K", value=config.parameters.top_k is not None
                 )

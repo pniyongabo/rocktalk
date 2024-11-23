@@ -34,7 +34,6 @@ class BedrockLLM(LLMInterface):
 
     def update_config(self, config: LLMConfig) -> None:
         # debug(config)
-
         self._config: LLMConfig = config.model_copy()
         self._update_llm()
 
@@ -49,7 +48,7 @@ class BedrockLLM(LLMInterface):
 
         self._llm = ChatBedrockConverse(
             region_name=self._config.region_name,
-            model=self._config.model_id,
+            model=self._config.bedrock_model_id,
             temperature=self._config.parameters.temperature,
             max_tokens=self._config.parameters.max_output_tokens,
             stop=self._config.stop_sequences,
