@@ -1,6 +1,10 @@
+import time
+
 import streamlit as st
 from models.storage_interface import StorageInterface
+from streamlit_chat_prompt import PromptReturn, prompt
 from utils.date_utils import create_date_masks
+
 from .chat import ChatInterface
 from .dialogs import interface_options, session_settings
 
@@ -15,6 +19,7 @@ class Sidebar:
     def render(self):
         with st.sidebar:
             st.title("Chat Sessions")
+
             with st.container():
                 col1, col2 = st.columns([0.5, 0.5], gap="small")
                 with col1:

@@ -13,6 +13,7 @@ from mypy_boto3_bedrock.type_defs import (
     FoundationModelSummaryTypeDef,
     ListFoundationModelsResponseTypeDef,
 )
+from utils.log import logger
 
 # Known maximum output tokens for specific models
 # These values are approximate and may change; always refer to the latest documentation
@@ -86,7 +87,7 @@ class BedrockService:
             )
 
         except Exception as e:
-            print(f"Error fetching models: {str(e)}")
+            logger.error(f"Error fetching models: {str(e)}")
             return []
 
     @staticmethod

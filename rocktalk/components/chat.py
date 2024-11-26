@@ -6,15 +6,12 @@ from typing import Optional, cast
 import streamlit as st
 import streamlit.components.v1 as stcomponents
 from langchain.schema import BaseMessage, HumanMessage
-from models.interfaces import (
-    ChatMessage,
-    ChatSession,
-    TurnState,
-)
+from langchain_core.messages import AIMessage
+from models.interfaces import ChatMessage, ChatSession, TurnState
+from models.llm import LLMInterface
 from models.storage_interface import StorageInterface
 from streamlit_chat_prompt import PromptReturn, prompt
-from models.llm import LLMInterface
-from langchain_core.messages import AIMessage
+from utils.log import logger
 
 
 class ChatInterface:
@@ -99,7 +96,7 @@ class ChatInterface:
 
         stcomponents.html(js, height=0)
 
-    def _scroll_to_bottom_streaming(self) -> None:
+    def _scroll_to_bottom_streaming(self, selector: str = ".stMarkdown") -> None:
         """Automatically scrolls the chat window during streaming responses.
 
         This method adds a JavaScript script that handles auto-scrolling behavior during
@@ -116,7 +113,8 @@ class ChatInterface:
         experience and targets the last markdown element in the chat window.
         """
         # Add scroll script with user interaction detection
-        js = """
+        js = (
+            """
         <script>
             let userHasScrolled = false;
             let scrollInterval;
@@ -138,13 +136,16 @@ class ChatInterface:
 
             function keepInView() {
                 if (!userHasScrolled) {
-                    const markdowns = window.parent.document.querySelectorAll('.stMarkdown');
-                    if (markdowns.length > 0) {
-                        const lastMarkdown = markdowns[markdowns.length - 1];
-                        lastMarkdown.scrollIntoView({
+                    const items = window.parent.document.querySelectorAll('"""
+            + f"{selector}"
+            + """');
+                    if (items.length > 0) {
+                        const lastItem = items[items.length - 1];
+                        lastItem.scrollIntoView({
                             behavior: 'smooth',
                             block: 'end'
                         });
+                        window.parent.document.documentElement.scrollTop += 100;  // 100px padding
                     }
                 }
             }
@@ -160,7 +161,11 @@ class ChatInterface:
             }, 30000);
         </script>
         """
+        )
         stcomponents.html(js, height=0)
+
+    def _stop_chat_stream(self):
+        st.session_state.stop_chat_stream = True
 
     def _display_chat_history(self) -> None:
         """Display the chat history in the Streamlit interface."""
@@ -181,6 +186,7 @@ class ChatInterface:
             st.session_state.messages = st.session_state.messages[
                 : original_message.index
             ]
+
             st.session_state.storage.delete_messages_from_index(
                 session_id=st.session_state.current_session_id,
                 from_index=original_message.index,
@@ -212,7 +218,9 @@ class ChatInterface:
             placeholder="Hello!",
             disabled=False,
             max_image_size=5 * 1024 * 1024,
+            default=st.session_state.user_input_default,
         )
+        st.session_state.user_input_default = None
 
         if chat_prompt_return and st.session_state.turn_state == TurnState.HUMAN_TURN:
             human_message: ChatMessage = ChatMessage.create_from_prompt(
@@ -248,19 +256,16 @@ class ChatInterface:
 
     def load_session(self, session_id: str) -> ChatSession:
         session = self.storage.get_session(session_id)
-        # if session:
-        # st.session_state.chat_session = session
         st.session_state.current_session_id = session_id
         st.session_state.messages = self.storage.get_messages(session.session_id)
 
         # Load session settings
         self.llm.update_config(session.config)
-        print(f"Loaded session {session.session_id} with config {session.config}")
+        logger.info(f"Loaded session {session.session_id} with config {session.config}")
         return session
 
     def _generate_ai_response(self) -> None:
         """Generate and display an AI response."""
-
         if st.session_state.turn_state == TurnState.AI_TURN:
 
             # Convert messages to LLM format
@@ -272,11 +277,24 @@ class ChatInterface:
                 latency = None
                 stop_reason = None
                 message_placeholder = st.empty()
-                full_response = ""
-                self._scroll_to_bottom_streaming()
-                # print(f"starting stream with stop_it = {st.session_state.stop_it}")
+
+                # add a stop stream button
+                stop_stream_button_key = "stop_stream_button"
+                st.button(
+                    label="Stop Stream 🛑",
+                    on_click=self._stop_chat_stream,
+                    key=stop_stream_button_key,
+                )
+
+                full_response: str = ""
+                self._scroll_to_bottom_streaming(
+                    selector=f".st-key-{stop_stream_button_key}"
+                )
                 for chunk in self.llm.stream(input=llm_messages):
                     chunk = cast(AIMessage, chunk)
+                    if st.session_state.stop_chat_stream:
+                        logger.info("Interrupting stream")
+                        break
                     for item in chunk.content:
                         if isinstance(item, dict) and "text" in item:
                             text = item["text"]
@@ -294,13 +312,32 @@ class ChatInterface:
                     # Track usage data
                     if hasattr(chunk, "usage_metadata") and chunk.usage_metadata:
                         usage_data = chunk.usage_metadata
+
                 metadata = {
                     "usage_data": usage_data,
                     "latency_ms": latency,
                     "stop_reason": stop_reason,
                 }
-                print(metadata)
+
+                if st.session_state.stop_chat_stream:
+                    metadata["stop_reason"] = "interrupted"
+                    logger.debug(f"LLM response: {metadata}")
+
+                    st.session_state.stop_chat_stream = False
+                    message_placeholder.empty()
+                    st.session_state.turn_state = TurnState.HUMAN_TURN
+                    last_human_message: ChatMessage = st.session_state.messages.pop()
+                    self.storage.delete_messages_from_index(
+                        session_id=st.session_state.current_session_id,
+                        from_index=last_human_message.index,
+                    )
+                    st.session_state.user_input_default = (
+                        last_human_message.to_prompt_return()
+                    )
+                    st.rerun()
+
                 message_placeholder.markdown(full_response)
+                logger.debug(f"LLM response: {metadata}")
 
                 # Create ChatMessage
                 current_index = len(st.session_state.messages)
@@ -359,12 +396,12 @@ class ChatInterface:
         if isinstance(title_content, str):
             title: str = title_content.strip('" \n').strip()
         else:
-            print(f"Unexpected generated title response: {title_content}")
+            logger.warning(f"Unexpected generated title response: {title_content}")
             return f"Chat {datetime.now()}"
 
         # Fallback to timestamp if we get an empty or invalid response
         if not title:
             title = f"Chat {datetime.now()}"
 
-        print(f"New session title: {title}")
+        logger.info(f"New session title: {title}")
         return title

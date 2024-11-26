@@ -6,11 +6,12 @@ from typing import Any, Dict, List, Literal, Optional, Protocol, Sequence
 import streamlit as st
 from langchain.schema import AIMessage, BaseMessage, HumanMessage
 from PIL.ImageFile import ImageFile
-from pydantic import BaseModel, Field, PrivateAttr, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from streamlit_chat_prompt import ImageData, PromptReturn, prompt
 from utils.image_utils import MAX_IMAGE_WIDTH, image_from_b64_image
-from utils.streamlit_utils import close_dialog
 from utils.log import logger
+from utils.streamlit_utils import close_dialog
+
 
 class LLMParameters(BaseModel):
     temperature: float
@@ -37,7 +38,6 @@ _DEFAULT_LLM_CONFIG: Optional["LLMConfig"] = None
 
 
 class LLMConfig(BaseModel):
-    # model_config = ConfigDict(protected_namespaces=()) UserWarning: Field "bedrock_model_id" in LLMConfig has conflict with protected namespace "model_".
     bedrock_model_id: str
     region_name: str
     parameters: LLMParameters
@@ -99,7 +99,7 @@ class ChatMessage(BaseModel):
     @st.dialog("Edit Message")
     def edit_message(self):
         previous_prompt = self.to_prompt_return()
-        logger.info(previous_prompt)
+        logger.debug(f"Previous prompt: {previous_prompt}")
         st.warning(
             "Editing message will re-run conversation from this point and will replace any existing conversation past this point!",
             icon="⚠️",
@@ -116,6 +116,31 @@ class ChatMessage(BaseModel):
             st.session_state.edit_message_value = self, prompt_return
             close_dialog()
             st.rerun()
+
+        # TODO add storage handler to message?
+        # Delete option
+        # if st.button(
+        #     "🗑️ Delete Session",
+        #     key=f"delete_{session_id}",
+        #     type="secondary",
+        #     use_container_width=True,
+        # ):
+        #     if st.session_state.get(
+        #         f"confirm_delete_{session_id}",
+        #         False,
+        #     ):
+        #         # last_human_message: ChatMessage = st.session_state.messages.pop()
+        #         self.storage.delete_messages_from_index(
+        #             session_id=st.session_state.current_session_id,
+        #             from_index=last_human_message.index,
+        #         )
+        #         st.session_state.user_input_default = (
+        #             last_human_message.to_prompt_return()
+        #         )
+        #         st.rerun()
+        #     else:
+        #         st.session_state[f"confirm_delete_{session_id}"] = True
+        #         st.warning("Click again to confirm deletion")
 
     def display(self) -> None:
         # Only show edit button for user messages

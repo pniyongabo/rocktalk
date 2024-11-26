@@ -1,9 +1,18 @@
 import logging
 
 logger = logging.getLogger("rocktalk")
-logger.setLevel(logging.DEBUG)
+log_level = logging.DEBUG
+logger.setLevel(log_level)
 handler = logging.StreamHandler()
-handler.setFormatter(
-    logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+
+info_format_string = "\n%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+debug_format_string = (
+    "\n%(asctime)s - %(name)s/%(filename)s:%(lineno)d - %(levelname)s - %(message)s"
 )
+
+if log_level == logging.DEBUG:
+    format_string = debug_format_string
+else:
+    format_string = info_format_string
+handler.setFormatter(logging.Formatter(format_string))
 logger.addHandler(handler)

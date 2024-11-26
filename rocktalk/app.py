@@ -2,9 +2,9 @@ import dotenv
 import streamlit as st
 from components.chat import ChatInterface
 from components.sidebar import Sidebar
-from storage.sqlite_storage import SQLiteChatStorage
 from config.settings import AppConfig
 from models.llm import BedrockLLM, LLMInterface
+from storage.sqlite_storage import SQLiteChatStorage
 
 # Load environment variables
 dotenv.load_dotenv()
@@ -16,6 +16,11 @@ if "app_config" not in st.session_state:
     st.session_state.app_config = app_config
 else:
     app_config = st.session_state.app_config
+
+if "stop_chat_stream" not in st.session_state:
+    st.session_state.stop_chat_stream = False
+if "user_input_default" not in st.session_state:
+    st.session_state.user_input_default = None
 
 st.set_page_config(
     page_title=app_config.page_title,
