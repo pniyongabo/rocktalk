@@ -79,7 +79,7 @@ class SettingsManager:
         st.subheader("🛠️ Model Settings")
 
         if "available_models" not in st.session_state:
-            logger.debug("initial setting of available_models")
+            # logger.debug("initial setting of available_models")
             bedrock = BedrockService()
             st.session_state.available_models = bedrock.get_compatible_models()
 
@@ -167,7 +167,7 @@ class SettingsManager:
 
             # Create provider tabs
             provider_tabs = st.tabs(st.session_state.ordered_providers)
-            logger.debug("displaying models")
+            # logger.debug("displaying models")
             for tab, provider in zip(provider_tabs, st.session_state.ordered_providers):
                 with tab:
                     for model in st.session_state.model_providers[provider]:
@@ -178,9 +178,6 @@ class SettingsManager:
                             if model.model_name:
                                 st.markdown(f"*{model.model_name}*")
                         with col2:
-                            logger.debug(
-                                f'model {model.bedrock_model_id}: {"primary" if model.bedrock_model_id == st.session_state.temp_llm_config.bedrock_model_id                                    else "secondary"}'
-                            )
                             st.button(
                                 "Select",
                                 key=f"select_{model.bedrock_model_id}",
@@ -196,10 +193,7 @@ class SettingsManager:
                                     model.bedrock_model_id,
                                 ),
                             )
-        logger.debug(f"temp_llm_preset: {st.session_state.temp_llm_preset}")
-        logger.debug(
-            f"first render? index = {list(LLMPresetName).index(st.session_state.temp_llm_preset)}"
-        )
+        # logger.debug(f"temp_llm_preset: {st.session_state.temp_llm_preset}")
         # Preset selector
         preset: LLMPresetName = st.selectbox(
             "Preset Configuration",
@@ -215,7 +209,27 @@ class SettingsManager:
         with st.expander("Advanced Settings", expanded=preset == LLMPresetName.CUSTOM):
             config: LLMConfig = st.session_state.temp_llm_config
 
-            logger.debug(f"temp from config: {float(config.parameters.temperature)}")
+            # logger.debug(f"temp from config: {float(config.parameters.temperature)}")
+
+            if not session:
+                # use_system = st.checkbox(
+                #     "Use System Prompt", value=config.system is not None
+                # )
+                # if use_system:
+                new_system = st.text_area(
+                    "System Prompt",
+                    value=config.system or "",
+                    help="Optional system prompt to provide context or instructions for the model",
+                    # disabled=config.system is None,
+                )
+                # if new_system != config.system:
+                logger.debug(f"Setting system message to: '{new_system}'")
+                st.session_state.temp_llm_config.system = new_system.strip() or None
+            else:
+                st.markdown(
+                    f"*System prompt is not editable in existing session*\n\n**System message:** {st.session_state.temp_llm_config.system}"
+                )
+
             # Temperature control
             use_temp = st.checkbox(
                 "Use Temperature", value=config.parameters.temperature is not None
@@ -230,17 +244,17 @@ class SettingsManager:
                 disabled=not use_temp,
             )
             if use_temp:
-                logger.debug(
-                    f"new_temp: {new_temp} | old {config.parameters.temperature}"
-                )
+                # logger.debug(
+                #     f"new_temp: {new_temp} | old {config.parameters.temperature}"
+                # )
                 st.session_state.temp_llm_config.parameters.temperature = new_temp
                 st.session_state.temp_llm_preset = LLMPresetName.CUSTOM
             else:
                 new_temp = None
 
-            logger.debug(
-                f"max_tokens from config: {config.parameters.max_output_tokens}"
-            )
+            # logger.debug(
+            #     f"max_tokens from config: {config.parameters.max_output_tokens}"
+            # )
             use_max_tokens = st.checkbox(
                 "Use Max Tokens", value=config.parameters.max_output_tokens is not None
             )
@@ -260,7 +274,7 @@ class SettingsManager:
                 )
                 st.session_state.temp_llm_preset = LLMPresetName.CUSTOM
 
-            logger.debug(f"top_p from config: {config.parameters.top_p}")
+            # logger.debug(f"top_p from config: {config.parameters.top_p}")
             use_top_p = st.checkbox(
                 "Use Top P", value=config.parameters.top_p is not None
             )
@@ -275,7 +289,7 @@ class SettingsManager:
                 disabled=not use_top_p,
             )
             if use_top_p:
-                logger.debug(f"new_top_p: {new_top_p} | old {config.parameters.top_p}")
+                # logger.debug(f"new_top_p: {new_top_p} | old {config.parameters.top_p}")
                 st.session_state.temp_llm_config.parameters.top_p = new_top_p
                 st.session_state.temp_llm_preset = LLMPresetName.CUSTOM
 
@@ -294,23 +308,11 @@ class SettingsManager:
                         disabled=config.parameters.top_k is None,
                     )
 
-                    logger.debug(
-                        f"new_top_k: {new_top_k} | old {config.parameters.top_k}"
-                    )
+                    # logger.debug(
+                    #     f"new_top_k: {new_top_k} | old {config.parameters.top_k}"
+                    # )
                     st.session_state.temp_llm_config.parameters.top_k = new_top_k
                     st.session_state.temp_llm_preset = LLMPresetName.CUSTOM
-            use_system = st.checkbox(
-                "Use System Prompt", value=config.system is not None
-            )
-            if use_system:
-                new_system = st.text_area(
-                    "System Prompt",
-                    value=config.system or "",
-                    help="Optional system prompt to provide context or instructions for the model",
-                    disabled=config.system is None,
-                )
-                # if new_system != config.system:
-                st.session_state.temp_llm_config.system = new_system
 
             new_stop_sequences = st.text_input(
                 "Stop Sequences",
@@ -326,7 +328,7 @@ class SettingsManager:
         # Show Apply button
         # Add checkbox for setting as default
         set_as_default = st.checkbox("Set as default configuration", value=False)
-        success_plecholder = st.empty()
+        success_placeholder = st.empty()
         if st.button("Apply Settings", type="primary"):
             if session:
                 logger.debug(
@@ -347,8 +349,7 @@ class SettingsManager:
             st.session_state.model_providers = None
             st.session_state.current_provider = None
             st.session_state.ordered_providers = None
-            # st.session_state.providers_reorder = None
-            with success_plecholder:
+            with success_placeholder:
                 st.success("Settings applied successfully!")
             time.sleep(1)
             st.rerun()

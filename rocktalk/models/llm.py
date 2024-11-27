@@ -18,7 +18,7 @@ class LLMInterface(ABC):
     @abstractmethod
     def invoke(self, input: List[BaseMessage]) -> BaseMessage: ...
     @abstractmethod
-    def update_config(self, config: LLMConfig) -> None: ...
+    def update_config(self, config: Optional[LLMConfig] = None) -> None: ...
     @abstractmethod
     def get_config(self) -> LLMConfig: ...
 
@@ -32,9 +32,12 @@ class BedrockLLM(LLMInterface):
             config = LLMConfig.get_default()
         self.update_config(config=config)
 
-    def update_config(self, config: LLMConfig) -> None:
+    def update_config(self, config: Optional[LLMConfig] = None) -> None:
         # debug(config)
-        self._config: LLMConfig = config.model_copy()
+        if config:
+            self._config: LLMConfig = config.model_copy()
+        else:
+            self._config = LLMConfig.get_default()
         self._update_llm()
 
     def get_config(self) -> LLMConfig:
