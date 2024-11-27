@@ -54,6 +54,17 @@ class ChatInterface:
         self._handle_chat_input()
         self._generate_ai_response()
 
+    def get_system_message(self) -> ChatMessage | None:
+        if st.session_state.llm.get_config().system:
+            return ChatMessage(
+                session_id=st.session_state.current_session_id or "",
+                role="system",
+                content=st.session_state.llm.get_config().system,
+                index=-1,
+            )
+        else:
+            return None
+
     def _scroll_to_bottom(self) -> None:
         """Scrolls to the bottom of the chat interface.
 
@@ -169,6 +180,9 @@ class ChatInterface:
 
     def _display_chat_history(self) -> None:
         """Display the chat history in the Streamlit interface."""
+        system_message = self.get_system_message()
+        if system_message:
+            system_message.display()
 
         for message in st.session_state.messages:
             message: ChatMessage
@@ -180,7 +194,9 @@ class ChatInterface:
     def _handle_edit_message(self) -> None:
         if st.session_state.edit_message_value:
             original_message: ChatMessage = st.session_state.edit_message_value[0]
-            prompt_return: PromptReturn = st.session_state.edit_message_value[1]
+            prompt_return: Optional[PromptReturn] = st.session_state.edit_message_value[
+                1
+            ]
 
             # Remove this message and all following messages
             st.session_state.messages = st.session_state.messages[
@@ -192,18 +208,22 @@ class ChatInterface:
                 from_index=original_message.index,
             )
 
-            new_message = ChatMessage.create_from_prompt(
-                prompt_data=prompt_return,
-                session_id=original_message.session_id,
-                index=original_message.index,
-            )
+            st.session_state.turn_state = TurnState.HUMAN_TURN
 
-            # Add edited message
-            st.session_state.messages.append(new_message)
-            st.session_state.storage.save_message(message=new_message)
+            # if prompt_return provided, we use the new value and pass control back to AI
+            if prompt_return:
+                new_message = ChatMessage.create_from_prompt(
+                    prompt_data=prompt_return,
+                    session_id=original_message.session_id,
+                    index=original_message.index,
+                )
 
-            # Set turn state to AI_TURN to generate new response
-            st.session_state.turn_state = TurnState.AI_TURN
+                # Add edited message
+                st.session_state.messages.append(new_message)
+                st.session_state.storage.save_message(message=new_message)
+
+                # Set turn state to AI_TURN to generate new response
+                st.session_state.turn_state = TurnState.AI_TURN
 
             st.session_state.edit_message_value = None
 
@@ -247,12 +267,22 @@ class ChatInterface:
         Returns:
             List of BaseMessage objects in LLM format.
         """
-        return [msg.convert_to_llm_message() for msg in st.session_state.messages]
+        messages = []
 
-    @staticmethod
-    def clear_session():
+        system_message = self.get_system_message()
+        if system_message:
+            messages.append(system_message.convert_to_llm_message())
+
+        messages.extend(
+            [msg.convert_to_llm_message() for msg in st.session_state.messages]
+        )
+
+        return messages
+
+    def clear_session(self):
         st.session_state.current_session_id = None
         st.session_state.messages = []
+        self.llm.update_config()
 
     def load_session(self, session_id: str) -> ChatSession:
         session = self.storage.get_session(session_id)

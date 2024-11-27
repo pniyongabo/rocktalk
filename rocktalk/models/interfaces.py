@@ -4,7 +4,7 @@ from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Protocol, Sequence
 
 import streamlit as st
-from langchain.schema import AIMessage, BaseMessage, HumanMessage
+from langchain.schema import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from PIL.ImageFile import ImageFile
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from streamlit_chat_prompt import ImageData, PromptReturn, prompt
@@ -66,12 +66,12 @@ class LLMConfig(BaseModel):
                 parameters=preset_parm,
             )
 
-        return _DEFAULT_LLM_CONFIG
+        return _DEFAULT_LLM_CONFIG.model_copy(deep=True)
 
     @staticmethod
     def set_default(llm_config: "LLMConfig") -> None:
         global _DEFAULT_LLM_CONFIG
-        _DEFAULT_LLM_CONFIG = llm_config.model_copy()
+        _DEFAULT_LLM_CONFIG = llm_config.model_copy(deep=True)
 
 
 class TurnState(Enum):
@@ -99,7 +99,7 @@ class ChatMessage(BaseModel):
     @st.dialog("Edit Message")
     def edit_message(self):
         previous_prompt = self.to_prompt_return()
-        logger.debug(f"Previous prompt: {previous_prompt}")
+        logger.debug(f"Editing message: {previous_prompt}")
         st.warning(
             "Editing message will re-run conversation from this point and will replace any existing conversation past this point!",
             icon="⚠️",
@@ -117,36 +117,30 @@ class ChatMessage(BaseModel):
             close_dialog()
             st.rerun()
 
-        # TODO add storage handler to message?
+        st.divider()
         # Delete option
-        # if st.button(
-        #     "🗑️ Delete Session",
-        #     key=f"delete_{session_id}",
-        #     type="secondary",
-        #     use_container_width=True,
-        # ):
-        #     if st.session_state.get(
-        #         f"confirm_delete_{session_id}",
-        #         False,
-        #     ):
-        #         # last_human_message: ChatMessage = st.session_state.messages.pop()
-        #         self.storage.delete_messages_from_index(
-        #             session_id=st.session_state.current_session_id,
-        #             from_index=last_human_message.index,
-        #         )
-        #         st.session_state.user_input_default = (
-        #             last_human_message.to_prompt_return()
-        #         )
-        #         st.rerun()
-        #     else:
-        #         st.session_state[f"confirm_delete_{session_id}"] = True
-        #         st.warning("Click again to confirm deletion")
+        if st.button(
+            "🗑️ Delete Messages Hence",
+            key=f"delete_message_edit_dialog",
+            type="secondary",
+            use_container_width=True,
+        ):
+            if st.session_state.get(
+                f"confirm_delete_message_edit_dialog",
+                False,
+            ):
+                st.session_state.edit_message_value = self, None
+                st.session_state["confirm_delete_message_edit_dialog"] = None
+                close_dialog()
+                st.rerun()
+            else:
+                st.session_state[f"confirm_delete_message_edit_dialog"] = True
+                st.warning("Click again to confirm deletion")
 
     def display(self) -> None:
         # Only show edit button for user messages
         col1, col2 = st.columns([0.9, 0.1])
         with col1:
-
             with st.chat_message(self.role):
                 if isinstance(self.content, str):
                     st.markdown(self.content)
@@ -179,7 +173,11 @@ class ChatMessage(BaseModel):
         Returns:
             LangChain message object (either HumanMessage or AIMessage).
         """
-        if self.role == "user":
+        if self.role == "system":
+            return SystemMessage(
+                content=self.content, additional_kwargs={"role": "system"}
+            )
+        elif self.role == "user":
             return HumanMessage(
                 content=self.content, additional_kwargs={"role": "user"}
             )
