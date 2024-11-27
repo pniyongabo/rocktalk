@@ -74,6 +74,23 @@ class SettingsManager:
         return LLMPresetName.CUSTOM
 
     @staticmethod
+    def clear_cached_settings_vars():
+        """Clear cached settings variables"""
+        if "temp_llm_config" in st.session_state:
+            del st.session_state.temp_llm_config
+        if "temp_llm_preset" in st.session_state:
+            del st.session_state.temp_llm_preset
+        if "llm_preset" in st.session_state:
+            del st.session_state.llm_preset
+        if "providers_reorder" in st.session_state:
+            del st.session_state.providers_reorder
+        # TODO should we cache or not these?
+        # if "available_models" in st.session_state:
+        #     del st.session_state.available_models
+        if "current_provider" in st.session_state:
+            del st.session_state.current_provider
+
+    @staticmethod
     def render_settings_widget(session: Optional[ChatSession] = None):
         """Render settings controls in the sidebar or dialog"""
         st.subheader("🛠️ Model Settings")

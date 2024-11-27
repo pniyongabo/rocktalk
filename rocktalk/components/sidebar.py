@@ -1,6 +1,7 @@
 import time
 
 import streamlit as st
+from config.settings import SettingsManager
 from models.storage_interface import StorageInterface
 from streamlit_chat_prompt import PromptReturn, prompt
 from utils.date_utils import create_date_masks
@@ -28,6 +29,7 @@ class Sidebar:
                         st.rerun()
                 with col2:
                     if st.button("Settings"):
+                        SettingsManager.clear_cached_settings_vars()
                         interface_options()
 
             self._render_session_list()
@@ -71,4 +73,5 @@ class Sidebar:
                                     key=f"menu_trigger_{df_session['session_id']}",
                                     help="Session options",
                                 ):
+                                    SettingsManager.clear_cached_settings_vars()
                                     session_settings(df_session)
