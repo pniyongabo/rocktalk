@@ -1,6 +1,6 @@
 # rocktalk/services/bedrock.py
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional
 
 import boto3
 from mypy_boto3_bedrock.literals import (

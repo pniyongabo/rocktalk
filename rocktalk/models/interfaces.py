@@ -1,12 +1,12 @@
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Literal, Optional, Protocol, Sequence
+from typing import Dict, List, Optional
 
 import streamlit as st
 from langchain.schema import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from PIL.ImageFile import ImageFile
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+from pydantic import BaseModel, Field
 from streamlit_chat_prompt import ImageData, PromptReturn, prompt
 from utils.image_utils import MAX_IMAGE_WIDTH, image_from_b64_image
 from utils.log import logger
