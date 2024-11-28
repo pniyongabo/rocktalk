@@ -1,9 +1,11 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Iterator, List, Optional
 
+from config.settings import aws_access_key_id, aws_region, aws_secret_access_key
 from langchain.schema import BaseMessage
 from langchain_aws import ChatBedrockConverse
 from langchain_core.messages.base import BaseMessageChunk
+from pydantic import SecretStr
 
 from .interfaces import LLMConfig
 
@@ -53,6 +55,13 @@ class BedrockLLM(LLMInterface):
             stop=self._config.stop_sequences,
             top_p=self._config.parameters.top_p,
             additional_model_request_fields=additional_model_request_fields,
+            aws_access_key_id=(
+                SecretStr(aws_access_key_id) if aws_access_key_id else None
+            ),
+            aws_secret_access_key=(
+                SecretStr(aws_secret_access_key) if aws_secret_access_key else None
+            ),
+            # aws_session_token= SecretStr
         )
 
     def stream(self, input) -> Iterator[BaseMessageChunk]:

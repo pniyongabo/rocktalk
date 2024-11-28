@@ -62,7 +62,7 @@ class LLMConfig(BaseModel):
             preset_parm = PRESET_CONFIGS[LLMPresetName.BALANCED]
             _DEFAULT_LLM_CONFIG = LLMConfig(
                 bedrock_model_id="anthropic.claude-3-sonnet-20240229-v1:0",
-                region_name="us-west-2",
+                region_name="us-west-2",  # TODO use AWS_REGION
                 parameters=preset_parm,
             )
 
