@@ -1,36 +1,23 @@
-import dotenv
 import streamlit as st
 from components.chat import ChatInterface
 from components.sidebar import Sidebar
-from config.settings import AppConfig
+from config.settings import DEPLOYED, app_config, check_password
 from models.llm import BedrockLLM, LLMInterface
 from storage.sqlite_storage import SQLiteChatStorage
-
-# Load environment variables
-dotenv.load_dotenv()
-
-# Set page configuration
-app_config: AppConfig
-if "app_config" not in st.session_state:
-    app_config = AppConfig()
-    st.session_state.app_config = app_config
-else:
-    app_config = st.session_state.app_config
 
 if "stop_chat_stream" not in st.session_state:
     st.session_state.stop_chat_stream = False
 if "user_input_default" not in st.session_state:
     st.session_state.user_input_default = None
 
-st.set_page_config(
-    page_title=app_config.page_title,
-    page_icon=app_config.page_icon,
-    layout=app_config.layout,
-)
 
 st.subheader(
     f"{app_config.page_title}: Powered by AWS Bedrock 🪨 + LangChain 🦜️🔗 + Streamlit 👑"
 )
+# Password check
+if DEPLOYED and not check_password():
+    st.stop()
+
 
 # Initialize storage in session state
 if "storage" not in st.session_state:

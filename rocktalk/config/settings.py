@@ -1,11 +1,12 @@
-import json
+import hmac
+import os
 import time
-from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, Dict, List, Literal, Optional, Sequence
+from typing import Optional
 
+import boto3
 import dotenv
 import streamlit as st
+from botocore.exceptions import NoCredentialsError
 from models.interfaces import (
     PRESET_CONFIGS,
     ChatSession,
@@ -15,9 +16,15 @@ from models.interfaces import (
 )
 from models.storage_interface import StorageInterface
 from pydantic import BaseModel
-from services.bedrock import BedrockService, FoundationModelSummary
+from services.bedrock import BedrockService
 from streamlit.commands.page_config import Layout
 from utils.log import logger
+
+# Load environment variables
+dotenv.load_dotenv()
+
+# Check for deployment environment
+DEPLOYED = os.getenv("DEPLOYED", "False").lower() == "true"
 
 
 class AppConfig(BaseModel):
@@ -25,6 +32,121 @@ class AppConfig(BaseModel):
     page_icon: str = "🪨"
     layout: Layout = "wide"
     db_path: str = "chat_database.db"
+
+
+# Set page configuration
+app_config: AppConfig
+if "app_config" not in st.session_state:
+    app_config = AppConfig()
+    st.session_state.app_config = app_config
+else:
+    app_config = st.session_state.app_config
+
+
+st.set_page_config(
+    page_title=app_config.page_title,
+    page_icon=app_config.page_icon,
+    layout=app_config.layout,
+)
+
+
+def get_aws_credentials() -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """
+    Get AWS credentials in following order:
+    1. boto3 credential chain (AWS CLI/IAM role/environment)
+    2. Streamlit secrets (if deployed)
+    3. Environment variables
+    Returns tuple of (aws_access_key_id, aws_secret_access_key, aws_region)
+    """
+    # Try boto3 credential chain first
+    try:
+        session = boto3.Session()
+        credentials = session.get_credentials()
+        if credentials:
+            frozen_credentials = credentials.get_frozen_credentials()
+            return (
+                frozen_credentials.access_key,
+                frozen_credentials.secret_key,
+                session.region_name or "us-west-2",
+            )
+    except NoCredentialsError:
+        pass
+
+    # Fall back to Streamlit secrets or environment variables
+    if DEPLOYED:
+        return (
+            st.secrets.get("aws", {}).get("aws_access_key_id"),
+            st.secrets.get("aws", {}).get("aws_secret_access_key"),
+            st.secrets.get("aws", {}).get("aws_region", "us-west-2"),
+        )
+    else:
+        return (
+            os.getenv("AWS_ACCESS_KEY_ID"),
+            os.getenv("AWS_SECRET_ACCESS_KEY"),
+            os.getenv("AWS_REGION", "us-west-2"),
+        )
+
+
+# Password handling
+def get_password() -> Optional[str]:
+    """
+    Get password from environment variables or Streamlit secrets
+    Returns None if no password is configured, with appropriate warnings
+    """
+    password = None
+    if DEPLOYED:
+        password = st.secrets.get("password")
+        if not password:
+            st.warning("⚠️ No password configured in Streamlit secrets")
+    else:
+        password = os.getenv("APP_PASSWORD")
+        if not password:
+            st.warning("⚠️ No APP_PASSWORD set in environment variables")
+
+    return password
+
+
+@st.cache_data(ttl=3600)  # Cache for 1 hour
+def get_cached_aws_credentials() -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """
+    Cached version of AWS credentials retrieval
+    TTL of 1 hour to allow for credential rotation
+    """
+    credentials = get_aws_credentials()
+    return credentials
+
+
+# Validate AWS credentials
+aws_access_key_id, aws_secret_access_key, aws_region = get_cached_aws_credentials()
+if not all([aws_access_key_id, aws_secret_access_key, aws_region]):
+    st.error("Missing AWS credentials. Please check your configuration.")
+    st.stop()
+
+
+def check_password() -> bool:
+    """Returns `True` if the user had the correct password."""
+    password = get_password()
+    if not password:
+        st.error("Password not configured")
+        st.stop()
+
+    def password_entered():
+        """Checks whether a password entered by the user is correct."""
+        if hmac.compare_digest(st.session_state["password"], password):
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]
+        else:
+            st.session_state["password_correct"] = False
+
+    if st.session_state.get("password_correct", False):
+        return True
+
+    st.text_input(
+        "Password", type="password", on_change=password_entered, key="password"
+    )
+    if "password_correct" in st.session_state:
+        st.error("😕 Password incorrect")
+    return False
 
 
 class SettingsManager:
@@ -370,7 +492,3 @@ class SettingsManager:
                 st.success("Settings applied successfully!")
             time.sleep(1)
             st.rerun()
-
-
-# Load environment variables
-dotenv.load_dotenv()

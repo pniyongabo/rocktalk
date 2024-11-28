@@ -181,3 +181,7 @@ cython_debug/
 
 # chat database
 *.db
+
+.env 
+.streamlit/secrets.toml
+*secrets*
