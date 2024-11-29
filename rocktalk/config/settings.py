@@ -197,7 +197,11 @@ class SettingsManager:
         if "available_models" not in st.session_state:
             # logger.debug("initial setting of available_models")
             bedrock = BedrockService()
-            st.session_state.available_models = bedrock.get_compatible_models()
+            try:
+                st.session_state.available_models = bedrock.get_compatible_models()
+            except Exception as e:
+                st.error(f"Error getting compatible models: {e}")
+                st.session_state.available_models = []
 
         if (
             "temp_llm_config" not in st.session_state
@@ -232,83 +236,86 @@ class SettingsManager:
             st.session_state.temp_llm_config.model_dump(),
         )
 
-        # Display currently selected model
-        current_model = next(
-            (
-                m
-                for m in st.session_state.available_models
-                if m.bedrock_model_id
-                == st.session_state.temp_llm_config.bedrock_model_id
-            ),
-            None,
-        )
-        # if current_model:
-        #     st.markdown(f"**Currently Selected Model:** {current_model.bedrock_model_id}")
-        #     if current_model.model_name:
-        #         st.markdown(f"*{current_model.model_name}*")
+        if st.session_state.available_models:
+            # Display currently selected model
+            current_model = next(
+                (
+                    m
+                    for m in st.session_state.available_models
+                    if m.bedrock_model_id
+                    == st.session_state.temp_llm_config.bedrock_model_id
+                ),
+                None,
+            )
+            # if current_model:
+            #     st.markdown(f"**Currently Selected Model:** {current_model.bedrock_model_id}")
+            #     if current_model.model_name:
+            #         st.markdown(f"*{current_model.model_name}*")
 
-        # Model selector in an expander
-        with st.expander("Change Model", expanded=False):
-            # TODO add refresh to get latest Bedrock models
-            # bedrock = BedrockService()
-            # st.session_state.available_models = bedrock.get_compatible_models()
+            # Model selector in an expander
+            with st.expander("Change Model", expanded=False):
+                # TODO add refresh to get latest Bedrock models
+                # bedrock = BedrockService()
+                # st.session_state.available_models = bedrock.get_compatible_models()
 
-            if (
-                "model_providers" not in st.session_state
-                or st.session_state.model_providers is None
-            ):
-                # Group models by provider
-                providers = {}
-                for model in st.session_state.available_models:
-                    provider = model.provider_name or "Other"
-                    if provider not in providers:
-                        providers[provider] = []
-                    providers[provider].append(model)
-                st.session_state.model_providers = providers
+                if (
+                    "model_providers" not in st.session_state
+                    or st.session_state.model_providers is None
+                ):
+                    # Group models by provider
+                    providers = {}
+                    for model in st.session_state.available_models:
+                        provider = model.provider_name or "Other"
+                        if provider not in providers:
+                            providers[provider] = []
+                        providers[provider].append(model)
+                    st.session_state.model_providers = providers
 
-            if (
-                "current_provider" not in st.session_state
-                or st.session_state.current_provider is None
-            ):
-                # Reorder providers to put the current model's provider first
-                st.session_state.current_provider = (
-                    current_model.provider_name if current_model else None
-                )
-            if (
-                "ordered_providers" not in st.session_state
-                or st.session_state.ordered_providers is None
-            ):
-                # only order the providers once based on current model, otherwise the tabs will move on user causing bad UX
-                SettingsManager.reorder_model_providers()
+                if (
+                    "current_provider" not in st.session_state
+                    or st.session_state.current_provider is None
+                ):
+                    # Reorder providers to put the current model's provider first
+                    st.session_state.current_provider = (
+                        current_model.provider_name if current_model else None
+                    )
+                if (
+                    "ordered_providers" not in st.session_state
+                    or st.session_state.ordered_providers is None
+                ):
+                    # only order the providers once based on current model, otherwise the tabs will move on user causing bad UX
+                    SettingsManager.reorder_model_providers()
 
-            # Create provider tabs
-            provider_tabs = st.tabs(st.session_state.ordered_providers)
-            # logger.debug("displaying models")
-            for tab, provider in zip(provider_tabs, st.session_state.ordered_providers):
-                with tab:
-                    for model in st.session_state.model_providers[provider]:
-                        st.divider()
-                        col1, col2 = st.columns([0.7, 0.3])
-                        with col1:
-                            st.markdown(f"**{model.bedrock_model_id}**")
-                            if model.model_name:
-                                st.markdown(f"*{model.model_name}*")
-                        with col2:
-                            st.button(
-                                "Select",
-                                key=f"select_{model.bedrock_model_id}",
-                                type=(
-                                    "primary"
-                                    if model.bedrock_model_id
-                                    == st.session_state.temp_llm_config.bedrock_model_id
-                                    else "secondary"
-                                ),
-                                on_click=SettingsManager.set_temp_llm_config_model,
-                                args=(
-                                    provider,
-                                    model.bedrock_model_id,
-                                ),
-                            )
+                # Create provider tabs
+                provider_tabs = st.tabs(st.session_state.ordered_providers)
+                # logger.debug("displaying models")
+                for tab, provider in zip(
+                    provider_tabs, st.session_state.ordered_providers
+                ):
+                    with tab:
+                        for model in st.session_state.model_providers[provider]:
+                            st.divider()
+                            col1, col2 = st.columns([0.7, 0.3])
+                            with col1:
+                                st.markdown(f"**{model.bedrock_model_id}**")
+                                if model.model_name:
+                                    st.markdown(f"*{model.model_name}*")
+                            with col2:
+                                st.button(
+                                    "Select",
+                                    key=f"select_{model.bedrock_model_id}",
+                                    type=(
+                                        "primary"
+                                        if model.bedrock_model_id
+                                        == st.session_state.temp_llm_config.bedrock_model_id
+                                        else "secondary"
+                                    ),
+                                    on_click=SettingsManager.set_temp_llm_config_model,
+                                    args=(
+                                        provider,
+                                        model.bedrock_model_id,
+                                    ),
+                                )
         # logger.debug(f"temp_llm_preset: {st.session_state.temp_llm_preset}")
         # Preset selector
         preset: LLMPresetName = st.selectbox(
