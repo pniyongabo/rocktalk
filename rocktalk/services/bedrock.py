@@ -62,8 +62,13 @@ class FoundationModelSummary:
 
 
 class BedrockService:
-    def __init__(self, region_name: str = "us-west-2"):
-        self.client = boto3.client("bedrock", region_name=region_name)
+    def __init__(self, region_name, aws_access_key_id, aws_secret_access_key):
+        self.client = boto3.client(
+            "bedrock",
+            region_name=region_name,
+            aws_access_key_id=aws_access_key_id,
+            aws_secret_access_key=aws_secret_access_key,
+        )
         self.runtime = boto3.client("bedrock-runtime", region_name=region_name)
 
     def list_foundation_models(self) -> List[FoundationModelSummary]:
@@ -91,9 +96,11 @@ class BedrockService:
             return []
 
     @staticmethod
-    def get_compatible_models() -> List[FoundationModelSummary]:
+    def get_compatible_models(
+        region_name, aws_access_key_id, aws_secret_access_key
+    ) -> List[FoundationModelSummary]:
         """Get list of models compatible with chat functionality."""
-        service = BedrockService()
+        service = BedrockService(region_name, aws_access_key_id, aws_secret_access_key)
         models = service.list_foundation_models()
 
         # Filter for models that:

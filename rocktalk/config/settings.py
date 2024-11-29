@@ -196,9 +196,14 @@ class SettingsManager:
 
         if "available_models" not in st.session_state:
             # logger.debug("initial setting of available_models")
-            bedrock = BedrockService()
             try:
-                st.session_state.available_models = bedrock.get_compatible_models()
+                st.session_state.available_models = (
+                    BedrockService.get_compatible_models(
+                        region_name=aws_region,
+                        aws_access_key_id=aws_access_key_id,
+                        aws_secret_access_key=aws_secret_access_key,
+                    )
+                )
             except Exception as e:
                 st.error(f"Error getting compatible models: {e}")
                 st.session_state.available_models = []
