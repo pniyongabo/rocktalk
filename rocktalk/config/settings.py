@@ -24,30 +24,7 @@ from utils.log import logger
 dotenv.load_dotenv()
 
 # Check for deployment environment
-DEPLOYED = os.getenv("DEPLOYED", "False").lower() == "true"
-
-
-class AppConfig(BaseModel):
-    page_title: str = "RockTalk"
-    page_icon: str = "🪨"
-    layout: Layout = "wide"
-    db_path: str = "chat_database.db"
-
-
-# Set page configuration
-app_config: AppConfig
-if "app_config" not in st.session_state:
-    app_config = AppConfig()
-    st.session_state.app_config = app_config
-else:
-    app_config = st.session_state.app_config
-
-
-st.set_page_config(
-    page_title=app_config.page_title,
-    page_icon=app_config.page_icon,
-    layout=app_config.layout,
-)
+DEPLOYED = os.getenv("DEPLOYED", "true").lower() == "true"
 
 
 def get_aws_credentials() -> tuple[Optional[str], Optional[str], Optional[str]]:
@@ -106,7 +83,7 @@ def get_password() -> Optional[str]:
     return password
 
 
-@st.cache_data(ttl=3600)  # Cache for 1 hour
+# @st.cache_data(ttl=3600)  # Cache for 1 hour
 def get_cached_aws_credentials() -> tuple[Optional[str], Optional[str], Optional[str]]:
     """
     Cached version of AWS credentials retrieval
