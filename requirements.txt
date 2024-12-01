@@ -82,4 +82,4 @@ streamlit==1.39.0
 streamlit_float==0.3.5
 streamlit-js-eval==0.1.7
 st-theme==1.2.3
-streamlit-chat-prompt>=0.3.2
+streamlit-chat-prompt>=0.3.3
