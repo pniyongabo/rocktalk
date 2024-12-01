@@ -1,4 +1,3 @@
-
 import streamlit as st
 from config.settings import SettingsManager
 from models.storage_interface import StorageInterface
@@ -18,15 +17,14 @@ class Sidebar:
     def render(self):
         with st.sidebar:
             st.title("Chat Sessions")
-
             with st.container():
                 col1, col2 = st.columns([0.5, 0.5], gap="small")
                 with col1:
-                    if st.button("New Chat", type="primary"):
+                    if st.button("New Chat", type="primary", use_container_width=True):
                         self.chat_interface.clear_session()  # Use this instead
                         st.rerun()
                 with col2:
-                    if st.button("Settings"):
+                    if st.button("Settings", use_container_width=True):
                         SettingsManager.clear_cached_settings_vars()
                         interface_options()
 
@@ -70,6 +68,7 @@ class Sidebar:
                                     "⋮",
                                     key=f"menu_trigger_{df_session['session_id']}",
                                     help="Session options",
+                                    use_container_width=True,
                                 ):
                                     SettingsManager.clear_cached_settings_vars()
                                     session_settings(df_session)

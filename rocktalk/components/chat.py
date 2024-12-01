@@ -1,5 +1,7 @@
 """Chat interface module for handling user-AI conversations with support for text and images."""
 
+import functools
+import time
 from datetime import datetime
 from typing import Optional, cast
 
@@ -10,7 +12,9 @@ from langchain_core.messages import AIMessage
 from models.interfaces import ChatMessage, ChatSession, TurnState
 from models.llm import LLMInterface
 from models.storage_interface import StorageInterface
-from streamlit_chat_prompt import PromptReturn, prompt
+from streamlit_chat_prompt import PromptReturn, pin_bottom, prompt
+from streamlit_float import float_css_helper
+from streamlit_shortcuts import add_keyboard_shortcuts, button
 from utils.log import logger
 
 
@@ -59,7 +63,7 @@ class ChatInterface:
             return ChatMessage(
                 session_id=st.session_state.current_session_id or "",
                 role="system",
-                content=st.session_state.llm.get_config().system,
+                content=str(st.session_state.llm.get_config().system),
                 index=-1,
             )
         else:
@@ -176,6 +180,7 @@ class ChatInterface:
         stcomponents.html(js, height=0)
 
     def _stop_chat_stream(self):
+        st.toast("Stopping stream")
         st.session_state.stop_chat_stream = True
 
     def _display_chat_history(self) -> None:
@@ -232,14 +237,23 @@ class ChatInterface:
 
         Gets input from the chat prompt and processes it if provided.
         """
-        chat_prompt_return: Optional[PromptReturn] = prompt(
-            name="chat_input",
-            key="main_prompt",
-            placeholder="Hello!",
-            disabled=False,
-            max_image_size=5 * 1024 * 1024,
-            default=st.session_state.user_input_default,
-        )
+        prompt_container_key = "prompt_container"
+        pin_bottom(prompt_container_key)
+        prompt_container = st.container(key=prompt_container_key)
+        # st.session_state.prompt_container =
+        with prompt_container:
+            self.prompt_placeholder = (
+                st.empty()
+            )  # Note only one thing can exist in an st.empty() so need to use a container if more than one streamlit object is supposed to be in this container
+            with self.prompt_placeholder:
+                chat_prompt_return: Optional[PromptReturn] = prompt(
+                    name="chat_input",
+                    key="main_prompt",
+                    placeholder="Hello!",
+                    disabled=False,
+                    max_image_size=5 * 1024 * 1024,
+                    default=st.session_state.user_input_default,
+                )
         st.session_state.user_input_default = None
 
         if chat_prompt_return and st.session_state.turn_state == TurnState.HUMAN_TURN:
@@ -308,17 +322,21 @@ class ChatInterface:
                 stop_reason = None
                 message_placeholder = st.empty()
 
-                # add a stop stream button
-                stop_stream_button_key = "stop_stream_button"
-                st.button(
-                    label="Stop Stream 🛑",
-                    on_click=self._stop_chat_stream,
-                    key=stop_stream_button_key,
-                )
-
+                with self.prompt_placeholder:
+                    # add a stop stream button
+                    stop_stream_button_key = "stop_stream_button"
+                    with st.container():
+                        button(
+                            label="Stop (⌘/⊞ + ⌫)",
+                            shortcut="Meta+backspace",
+                            help="Stop the current stream (⌘/⊞ + ⌫)",
+                            icon="🛑",
+                            on_click=self._stop_chat_stream,
+                            use_container_width=True,
+                        )
                 full_response: str = ""
                 self._scroll_to_bottom_streaming(
-                    selector=f".st-key-{stop_stream_button_key}"
+                    # selector=f".st-key-{stop_stream_button_key}"
                 )
                 for chunk in self.llm.stream(input=llm_messages):
                     chunk = cast(AIMessage, chunk)
