@@ -27,7 +27,7 @@ class Sidebar:
                     if st.button("Settings", use_container_width=True):
                         SettingsManager.clear_cached_settings_vars()
                         interface_options()
-
+            st.divider()
             self._render_session_list()
 
     def _render_session_list(self):
