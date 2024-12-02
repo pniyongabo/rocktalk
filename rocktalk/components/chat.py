@@ -1,7 +1,5 @@
 """Chat interface module for handling user-AI conversations with support for text and images."""
 
-import functools
-import time
 from datetime import datetime
 from typing import Optional, cast
 
@@ -13,8 +11,7 @@ from models.interfaces import ChatMessage, ChatSession, TurnState
 from models.llm import LLMInterface
 from models.storage_interface import StorageInterface
 from streamlit_chat_prompt import PromptReturn, pin_bottom, prompt
-from streamlit_float import float_css_helper
-from streamlit_shortcuts import add_keyboard_shortcuts, button
+from streamlit_shortcuts import button
 from utils.log import logger
 
 
@@ -185,6 +182,35 @@ class ChatInterface:
 
     def _display_chat_history(self) -> None:
         """Display the chat history in the Streamlit interface."""
+        # print(st.session_state.theme)
+        if "theme" in st.session_state and st.session_state.theme:
+            st.markdown(
+                f"""
+            <style>
+                // propogate the background color to entire user message container
+                [class*='st-key-user_message_container_']
+                {{
+                    background-color: {st.session_state.theme['secondaryBackgroundColor']};
+                    // border-radius: 0.5rem;
+                }}
+
+                // add padding to message containers to make some space for buttons
+                [class*='st-key'][class*='_message_container_']
+                {{
+                    padding: 1rem;
+                }}
+
+                // right align message buttons
+                [class*='st-key-message_buttons_']
+                {{
+                    display: flex !important;
+                    justify-content: flex-end !important; /* Right align */
+                }}
+            </style>
+            """,
+                unsafe_allow_html=True,
+            )
+
         system_message = self.get_system_message()
         if system_message:
             system_message.display()
@@ -194,7 +220,13 @@ class ChatInterface:
             message.display()
 
         st.session_state.scroll_div_index = 0
-        self._scroll_to_bottom()
+
+        # Don't scroll if we just copied a message
+        # TODO figure out why the page reloads 3 times?? Maybe something to do with the copy js iframe loading?
+        if st.session_state.message_copied > 0:
+            st.session_state.message_copied -= 1
+        else:
+            self._scroll_to_bottom()
 
     def _handle_edit_message(self) -> None:
         if st.session_state.edit_message_value:

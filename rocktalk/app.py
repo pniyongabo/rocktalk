@@ -8,8 +8,7 @@ from pydantic import BaseModel
 from storage.sqlite_storage import SQLiteChatStorage
 from streamlit.commands.page_config import Layout
 from streamlit_float import float_init
-from streamlit_js_eval import streamlit_js_eval
-from streamlit_theme import st_theme, stylized_container
+from streamlit_theme import st_theme
 
 
 class AppConfig(BaseModel):
@@ -39,7 +38,9 @@ if "stop_chat_stream" not in st.session_state:
     st.session_state.stop_chat_stream = False
 if "user_input_default" not in st.session_state:
     st.session_state.user_input_default = None
-# if "copy_js_loaded" not in st.session_state:
+if "message_copied" not in st.session_state:
+    st.session_state.message_copied = 0
+
 st.markdown(
     """
     <style>
@@ -77,10 +78,10 @@ function updateButtonHeight(targetKey) {
             console.error('Horizontal block not found');
             return;
         }
-        
+
         // Find the chat message within this horizontal block
         let chatMessage = horizontalBlock.querySelector('.stChatMessage');
-        
+
         // If not found, try one level up
         if (!chatMessage && horizontalBlock.parentElement) {
             horizontalBlock = horizontalBlock.parentElement.closest('.stHorizontalBlock');
@@ -88,22 +89,22 @@ function updateButtonHeight(targetKey) {
                 chatMessage = horizontalBlock.querySelector('.stChatMessage');
             }
         }
-        
+
         if (!chatMessage) {
             console.error('Related chat message not found in current or parent horizontal block');
             return;
         }
-        
+
         const computedStyle = window.getComputedStyle(chatMessage);
         const height = computedStyle.height;
         //console.log('Related chat message height:', height);
-        
+
         // Set gap to 0 for the immediate verticalBlock
         const immediateBlock = targetButton.closest('.stVerticalBlock');
         if (immediateBlock) {
             immediateBlock.style.gap = '0';
         }
-        
+
         // Make button fill height
         targetButton.style.height = height;
         targetButton.style.boxSizing = 'border-box';
@@ -112,7 +113,7 @@ function updateButtonHeight(targetKey) {
         // Reset button height in wrapped mode
         targetButton.style.height = '';
         //console.log('Reset button height (wrapped mode)');
-        
+
         // Optionally reset gap
         const immediateBlock = targetButton.closest('.stVerticalBlock');
         if (immediateBlock) {

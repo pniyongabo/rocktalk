@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Iterator, List, Optional
 
-from config.settings import aws_access_key_id, aws_region, aws_secret_access_key
+from config.settings import aws_access_key_id, aws_secret_access_key
 from langchain.schema import BaseMessage
 from langchain_aws import ChatBedrockConverse
 from langchain_core.messages.base import BaseMessageChunk
