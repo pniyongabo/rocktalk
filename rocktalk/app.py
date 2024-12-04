@@ -32,7 +32,6 @@ st.set_page_config(
     page_icon=app_config.page_icon,
     layout=app_config.layout,
 )
-# print(st.session_state.theme)
 st.session_state.theme = st_theme()
 if "stop_chat_stream" not in st.session_state:
     st.session_state.stop_chat_stream = False

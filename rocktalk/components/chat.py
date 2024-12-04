@@ -183,24 +183,25 @@ class ChatInterface:
     def _display_chat_history(self) -> None:
         """Display the chat history in the Streamlit interface."""
         # print(st.session_state.theme)
+
         if "theme" in st.session_state and st.session_state.theme:
             st.markdown(
                 f"""
             <style>
-                // propogate the background color to entire user message container
+                /* propogate the background color to entire user message container */
                 [class*='st-key-user_message_container_']
                 {{
                     background-color: {st.session_state.theme['secondaryBackgroundColor']};
-                    // border-radius: 0.5rem;
+                    /* border-radius: 0.5rem; */
                 }}
 
-                // add padding to message containers to make some space for buttons
+                /* add padding to message containers to make some space for buttons */
                 [class*='st-key'][class*='_message_container_']
                 {{
                     padding: 1rem;
                 }}
 
-                // right align message buttons
+                /*  right align message buttons */
                 [class*='st-key-message_buttons_']
                 {{
                     display: flex !important;
