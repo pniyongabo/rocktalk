@@ -15,6 +15,8 @@ from mypy_boto3_bedrock.type_defs import (
 )
 from utils.log import logger
 
+from .creds import get_cached_aws_credentials
+
 # Known maximum output tokens for specific models
 # These values are approximate and may change; always refer to the latest documentation
 KNOWN_MAX_OUTPUT_TOKENS: Dict[str, int] = {
@@ -62,14 +64,19 @@ class FoundationModelSummary:
 
 
 class BedrockService:
-    def __init__(self, region_name, aws_access_key_id, aws_secret_access_key):
+    def __init__(self):
+        creds = get_cached_aws_credentials()
         self.client = boto3.client(
             "bedrock",
-            region_name=region_name,
-            aws_access_key_id=aws_access_key_id,
-            aws_secret_access_key=aws_secret_access_key,
+            region_name=creds.aws_region,
+            aws_access_key_id=creds.aws_access_key_id.get_secret_value(),
+            aws_secret_access_key=creds.aws_secret_access_key.get_secret_value(),
+            aws_session_token=(
+                creds.aws_session_token.get_secret_value()
+                if creds.aws_session_token
+                else None
+            ),
         )
-        self.runtime = boto3.client("bedrock-runtime", region_name=region_name)
 
     def list_foundation_models(self) -> List[FoundationModelSummary]:
         """Get list of available foundation models from Bedrock."""
@@ -96,11 +103,10 @@ class BedrockService:
             return []
 
     @staticmethod
-    def get_compatible_models(
-        region_name, aws_access_key_id, aws_secret_access_key
-    ) -> List[FoundationModelSummary]:
+    def get_compatible_models() -> List[FoundationModelSummary]:
         """Get list of models compatible with chat functionality."""
-        service = BedrockService(region_name, aws_access_key_id, aws_secret_access_key)
+        creds = get_cached_aws_credentials()
+        service = BedrockService()
         models = service.list_foundation_models()
 
         # Filter for models that:

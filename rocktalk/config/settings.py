@@ -25,43 +25,6 @@ dotenv.load_dotenv()
 DEPLOYED = os.getenv("DEPLOYED", "true").lower() == "true"
 
 
-def get_aws_credentials() -> tuple[Optional[str], Optional[str], Optional[str]]:
-    """
-    Get AWS credentials in following order:
-    1. boto3 credential chain (AWS CLI/IAM role/environment)
-    2. Streamlit secrets (if deployed)
-    3. Environment variables
-    Returns tuple of (aws_access_key_id, aws_secret_access_key, aws_region)
-    """
-    # Try boto3 credential chain first
-    try:
-        session = boto3.Session()
-        credentials = session.get_credentials()
-        if credentials:
-            frozen_credentials = credentials.get_frozen_credentials()
-            return (
-                frozen_credentials.access_key,
-                frozen_credentials.secret_key,
-                session.region_name or "us-west-2",
-            )
-    except NoCredentialsError:
-        pass
-
-    # Fall back to Streamlit secrets or environment variables
-    if DEPLOYED:
-        return (
-            st.secrets.get("aws", {}).get("aws_access_key_id"),
-            st.secrets.get("aws", {}).get("aws_secret_access_key"),
-            st.secrets.get("aws", {}).get("aws_region", "us-west-2"),
-        )
-    else:
-        return (
-            os.getenv("AWS_ACCESS_KEY_ID"),
-            os.getenv("AWS_SECRET_ACCESS_KEY"),
-            os.getenv("AWS_REGION", "us-west-2"),
-        )
-
-
 # Password handling
 def get_password() -> Optional[str]:
     """
@@ -79,23 +42,6 @@ def get_password() -> Optional[str]:
             st.warning("⚠️ No APP_PASSWORD set in environment variables")
 
     return password
-
-
-# @st.cache_data(ttl=3600)  # Cache for 1 hour
-def get_cached_aws_credentials() -> tuple[Optional[str], Optional[str], Optional[str]]:
-    """
-    Cached version of AWS credentials retrieval
-    TTL of 1 hour to allow for credential rotation
-    """
-    credentials = get_aws_credentials()
-    return credentials
-
-
-# Validate AWS credentials
-aws_access_key_id, aws_secret_access_key, aws_region = get_cached_aws_credentials()
-if not all([aws_access_key_id, aws_secret_access_key, aws_region]):
-    st.error("Missing AWS credentials. Please check your configuration.")
-    st.stop()
 
 
 def check_password() -> bool:
@@ -196,11 +142,7 @@ class SettingsManager:
             # logger.debug("initial setting of available_models")
             try:
                 st.session_state.available_models = (
-                    BedrockService.get_compatible_models(
-                        region_name=aws_region,
-                        aws_access_key_id=aws_access_key_id,
-                        aws_secret_access_key=aws_secret_access_key,
-                    )
+                    BedrockService.get_compatible_models()
                 )
             except Exception as e:
                 st.error(f"Error getting compatible models: {e}")

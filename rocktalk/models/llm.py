@@ -1,11 +1,10 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Iterator, List, Optional
 
-from config.settings import aws_access_key_id, aws_secret_access_key
 from langchain.schema import BaseMessage
 from langchain_aws import ChatBedrockConverse
 from langchain_core.messages.base import BaseMessageChunk
-from pydantic import SecretStr
+from services.creds import get_cached_aws_credentials
 
 from .interfaces import LLMConfig
 
@@ -46,22 +45,18 @@ class BedrockLLM(LLMInterface):
         additional_model_request_fields: Optional[Dict[str, Any]] = None
         if self._config.parameters.top_k:
             additional_model_request_fields = {"top_k": self._config.parameters.top_k}
-
+        creds = get_cached_aws_credentials()
         self._llm = ChatBedrockConverse(
-            region_name=self._config.region_name,
+            region_name=creds.aws_region,
             model=self._config.bedrock_model_id,
             temperature=self._config.parameters.temperature,
             max_tokens=self._config.parameters.max_output_tokens,
             stop=self._config.stop_sequences,
             top_p=self._config.parameters.top_p,
             additional_model_request_fields=additional_model_request_fields,
-            aws_access_key_id=(
-                SecretStr(aws_access_key_id) if aws_access_key_id else None
-            ),
-            aws_secret_access_key=(
-                SecretStr(aws_secret_access_key) if aws_secret_access_key else None
-            ),
-            # aws_session_token= SecretStr
+            aws_access_key_id=creds.aws_access_key_id,
+            aws_secret_access_key=creds.aws_secret_access_key,
+            aws_session_token=creds.aws_session_token,
         )
 
     def stream(self, input) -> Iterator[BaseMessageChunk]:
