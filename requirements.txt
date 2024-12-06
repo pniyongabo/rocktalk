@@ -69,6 +69,12 @@ smmap==5.0.1
 sniffio==1.3.1
 soupsieve==2.6
 SQLAlchemy==2.0.36
+streamlit==1.40.2
+streamlit-chat-prompt>=0.3.3
+streamlit-js-eval==0.1.7
+streamlit-shortcuts==0.1.9
+streamlit_float==0.3.5
+st-theme==1.2.3
 tenacity==9.0.0
 toml==0.10.2
 tornado==6.4.1
@@ -77,9 +83,3 @@ tzdata==2024.2
 urllib3==2.2.3
 watchdog==5.0.3
 yarl==1.15.5
-streamlit-shortcuts==0.1.9
-streamlit==1.39.0
-streamlit_float==0.3.5
-streamlit-js-eval==0.1.7
-st-theme==1.2.3
-streamlit-chat-prompt>=0.3.3

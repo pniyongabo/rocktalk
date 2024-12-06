@@ -418,7 +418,7 @@ class ChatInterface:
                     st.rerun()
 
                 message_placeholder.markdown(full_response)
-                logger.debug(f"LLM response: {metadata}")
+                logger.debug(f"LLM response: {full_response}\n{metadata}")
 
                 # Create ChatMessage
                 current_index = len(st.session_state.messages)
@@ -465,7 +465,7 @@ class ChatInterface:
         """
 
         title_prompt: HumanMessage = HumanMessage(
-            content=f"""Summarize this conversation's topic in up to 5 words or about 40 characters.
+            content=f"""Summarize this conversation's topic in up to 5 words or about 28 characters.
             More details are useful, but space is limited to show this summary, so ideally 2-4 words.
             Be direct and concise, no explanations needed. If there are missing messages, do the best you can to keep the summary short."""
         )
