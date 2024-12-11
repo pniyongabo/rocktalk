@@ -43,6 +43,10 @@ class Sidebar:
                 "label": ":material/settings: Settings",
                 "callback": self._open_global_settings,
             },
+            # 2: {  # Add templates option
+            #     "label": ":material/file_document: Templates",
+            #     "callback": template_settings,
+            # },
         }
 
         st.pills(
@@ -86,22 +90,22 @@ class Sidebar:
                 self._render_session_item(session)
             st.divider()
 
-    def _render_session_item(self, session):
+    def _render_session_item(self, df_session):
         """Render individual session item with actions"""
         options_map: PillOptions = {
             0: {
-                "label": f"{session['title']}",
-                "callback": partial(self._load_session, session["session_id"]),
+                "label": f"{df_session['title']}",
+                "callback": partial(self._load_session, df_session["session_id"]),
             },
             1: {
-                "label": ":material/more_vert:",
-                "callback": partial(self._open_session_settings, session),
+                "label": ":material/settings:",
+                "callback": partial(self._open_session_settings, df_session),
             },
         }
 
-        session_key = f"session_{session['session_id']}"
+        session_key = f"session_{df_session['session_id']}"
         st.segmented_control(
-            session["title"],
+            df_session["title"],
             options=options_map.keys(),
             format_func=lambda option: options_map[option]["label"],
             selection_mode="single",
@@ -162,7 +166,7 @@ class Sidebar:
         SettingsManager.clear_cached_settings_vars()
         general_options()
 
-    def _open_session_settings(self, session):
+    def _open_session_settings(self, df_session):
         """Open session settings dialog"""
         SettingsManager.clear_cached_settings_vars()
-        session_settings(session)
+        session_settings(df_session=df_session)

@@ -4,10 +4,9 @@ from datetime import datetime
 from typing import Optional, cast
 
 import streamlit as st
-import streamlit.components.v1 as stcomponents
 from langchain.schema import BaseMessage, HumanMessage
 from langchain_core.messages import AIMessage
-from models.interfaces import ChatMessage, ChatSession, LLMConfig, TurnState
+from models.interfaces import ChatMessage, ChatSession, TurnState
 from models.llm import LLMInterface
 from models.storage_interface import StorageInterface
 from streamlit_chat_prompt import PromptReturn, pin_bottom, prompt

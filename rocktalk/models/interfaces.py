@@ -1,15 +1,14 @@
 import json
-import pprint
 import uuid
 from datetime import datetime
 from enum import Enum
 from functools import partial
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 import streamlit as st
 from langchain.schema import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from PIL.ImageFile import ImageFile
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 from streamlit_chat_prompt import ImageData, PromptReturn, prompt
 from streamlit_js_eval import streamlit_js_eval
 from utils.image_utils import MAX_IMAGE_WIDTH, image_from_b64_image
