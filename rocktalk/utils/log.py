@@ -6,7 +6,7 @@ def setup_logger():
 
     # Check if handlers are already configured
     if not logger.handlers:
-        log_level = logging.DEBUG
+        log_level = logging.INFO
         logger.setLevel(log_level)
         handler = logging.StreamHandler()
 
