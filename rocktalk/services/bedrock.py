@@ -105,7 +105,6 @@ class BedrockService:
     @staticmethod
     def get_compatible_models() -> List[FoundationModelSummary]:
         """Get list of models compatible with chat functionality."""
-        creds = get_cached_aws_credentials()
         service = BedrockService()
         models = service.list_foundation_models()
 
@@ -114,19 +113,57 @@ class BedrockService:
         # - Support streaming
         # - Are in ACTIVE state
         # - Support ON_DEMAND inference
-        return [
-            model
-            for model in models
-            if (
-                model.output_modalities is not None
-                and "TEXT" in model.output_modalities
-                and model.response_streaming_supported
-                and model.model_lifecycle is not None
-                and model.model_lifecycle == "ACTIVE"
-                and model.inference_types_supported is not None
-                and "ON_DEMAND" in model.inference_types_supported
-            )
-        ]
+        compatible_models = []
+        for model in models:
+            if model.output_modalities is None:
+                logger.debug(
+                    f"Model {model.bedrock_model_id} skipped: No output modalities specified"
+                )
+            elif "TEXT" not in model.output_modalities:
+                logger.debug(
+                    f"Model {model.bedrock_model_id} skipped: Does not support TEXT output"
+                )
+            elif not model.response_streaming_supported:
+                logger.debug(
+                    f"Model {model.bedrock_model_id} skipped: Does not support streaming"
+                )
+            elif model.model_lifecycle is None:
+                logger.debug(
+                    f"Model {model.bedrock_model_id} skipped: No lifecycle status specified"
+                )
+            elif model.model_lifecycle != "ACTIVE":
+                logger.debug(
+                    f"Model {model.bedrock_model_id} skipped: Not in ACTIVE state"
+                )
+            elif model.inference_types_supported is None:
+                logger.debug(
+                    f"Model {model.bedrock_model_id} skipped: No inference types specified"
+                )
+            elif "ON_DEMAND" not in model.inference_types_supported:
+                logger.debug(
+                    f"Model {model.bedrock_model_id} skipped: Does not support ON_DEMAND inference. Model supports inference type: {model.inference_types_supported}"
+                )
+                if "INFERENCE_PROFILE" in model.inference_types_supported:
+                    # arn=f"arn:aws:bedrock:{creds.aws_region}::foundation-model/{model.bedrock_model_id}"
+                    # logger.info(f"Model {model.bedrock_model_id} supports INFERENCE_PROFILE inference. Trying model arn: {arn}")
+                    inference_profile_id = f"us.{model.bedrock_model_id}"
+                    logger.debug(
+                        f"Model {model.bedrock_model_id} supports INFERENCE_PROFILE inference. Trying model inference profile id: {inference_profile_id}"
+                    )
+
+                    compatible_models.append(
+                        FoundationModelSummary(
+                            bedrock_model_id=inference_profile_id,
+                            model_arn=model.model_arn,
+                            provider_name=model.provider_name,
+                            model_name=model.model_name,
+                        )
+                    )
+
+            else:
+                compatible_models.append(model)
+
+        return compatible_models
 
     @staticmethod
     def get_max_output_tokens(bedrock_model_id: str) -> int:
