@@ -2,7 +2,7 @@ import json
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from config.settings import LLMConfig
 from models.interfaces import ChatMessage, ChatSession, ChatTemplate
@@ -53,11 +53,12 @@ class SQLiteChatStorage(StorageInterface):
                     UNIQUE(session_id, message_index)  -- Ensure unique indexes per session
                 );
 
-                CREATE TABLE IF NOT EXISTS chat_templates (
+                CREATE TABLE IF NOT EXISTS templates (
                         template_id TEXT PRIMARY KEY,
-                        name TEXT NOT NULL,
-                        description TEXT NOT NULL, 
-                        config TEXT NOT NULL
+                        name TEXT NOT NULL UNIQUE,
+                        description TEXT NOT NULL,
+                        config TEXT NOT NULL,
+                        is_default BOOLEAN NOT NULL DEFAULT 0
                     );
 
                 -- Indexes for better search performance
@@ -72,7 +73,7 @@ class SQLiteChatStorage(StorageInterface):
                 ON messages(timestamp);
 
                 CREATE INDEX IF NOT EXISTS idx_templates_name 
-                ON chat_templates(name);
+                ON templates(name);
             """
             )
             self.initialize_preset_templates()
@@ -378,9 +379,9 @@ class SQLiteChatStorage(StorageInterface):
         with self.get_connection() as conn:
             conn.execute(
                 """
-                INSERT INTO chat_templates 
-                (template_id, name, description, config)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO templates 
+                (template_id, name, description, config, is_default)
+                VALUES (?, ?, ?, ?, 0)
                 """,
                 (
                     template.template_id,
@@ -392,24 +393,24 @@ class SQLiteChatStorage(StorageInterface):
 
     def initialize_preset_templates(self) -> None:
         """Initialize default preset templates if they don't exist"""
-        presets = super().get_default_templates()
+        presets = super().get_preset_templates()
 
         with self.get_connection() as conn:
             for template in presets:
                 # Check if preset already exists
                 cursor = conn.execute(
-                    "SELECT 1 FROM chat_templates WHERE name = ?",
+                    "SELECT 1 FROM templates WHERE name = ?",
                     (template.name,),
                 )
                 if not cursor.fetchone():
                     self.store_chat_template(template)
 
-    def get_chat_template(self, template_id: str) -> ChatTemplate:
-        """Get a specific chat template"""
+    def get_chat_template_by_id(self, template_id: str) -> ChatTemplate:
+        """Get a specific chat template by id"""
         with self.get_connection() as conn:
             cursor = conn.execute(
                 """
-                SELECT * FROM chat_templates 
+                SELECT * FROM templates 
                 WHERE template_id = ?
                 """,
                 (template_id,),
@@ -419,12 +420,27 @@ class SQLiteChatStorage(StorageInterface):
                 raise ValueError(f"No template found with id {template_id}")
             return self._deserialize_template(row)
 
+    def get_chat_template_by_name(self, template_name: str) -> ChatTemplate:
+        """Get a specific chat template by name"""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT * FROM templates 
+                WHERE name = ?
+                """,
+                (template_name,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                raise ValueError(f"No template found with name {template_name}")
+            return self._deserialize_template(row)
+
     def get_chat_templates(self) -> List[ChatTemplate]:
         """Get all chat templates"""
         with self.get_connection() as conn:
             cursor = conn.execute(
                 """
-                SELECT * FROM chat_templates 
+                SELECT * FROM templates 
                 ORDER BY name
                 """
             )
@@ -435,7 +451,7 @@ class SQLiteChatStorage(StorageInterface):
         with self.get_connection() as conn:
             result = conn.execute(
                 """
-                UPDATE chat_templates
+                UPDATE templates
                 SET name = ?, description = ?, config = ?
                 WHERE template_id = ?
                 """,
@@ -454,10 +470,64 @@ class SQLiteChatStorage(StorageInterface):
         with self.get_connection() as conn:
             result = conn.execute(
                 """
-                DELETE FROM chat_templates 
+                DELETE FROM templates 
                 WHERE template_id = ?
                 """,
                 (template_id,),
             )
             if result.rowcount == 0:
                 raise ValueError(f"No template found with id {template_id}")
+
+    def set_default_template(self, template_id: str) -> None:
+        """Set a template as the default
+
+        Args:
+            template_id: ID of the template to set as default
+
+        Raises:
+            ValueError: If template_id doesn't exist
+        """
+        with self.get_connection() as conn:
+            try:
+                conn.execute("BEGIN TRANSACTION")
+
+                # Verify template exists
+                cursor = conn.execute(
+                    "SELECT 1 FROM templates WHERE template_id = ?", (template_id,)
+                )
+                if not cursor.fetchone():
+                    raise ValueError(f"No template found with id {template_id}")
+
+                # Clear existing default
+                conn.execute("UPDATE templates SET is_default = 0")
+
+                # Set new default
+                result = conn.execute(
+                    "UPDATE templates SET is_default = 1 WHERE template_id = ?",
+                    (template_id,),
+                )
+
+                conn.execute("COMMIT")
+
+            except Exception as e:
+                conn.execute("ROLLBACK")
+                raise e
+
+    def get_default_template(self) -> ChatTemplate:
+        """Get the current default template
+
+        Returns:
+            The default template if one is set, raise otherwise
+        """
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT * FROM templates 
+                WHERE is_default = 1
+                """
+            )
+            try:
+                row = cursor.fetchone()
+                return self._deserialize_template(row)
+            except Exception as e:
+                raise e

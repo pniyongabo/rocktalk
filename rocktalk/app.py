@@ -252,7 +252,7 @@ if "storage" not in st.session_state:
 
 # Initialize LLM object in session state
 if "llm" not in st.session_state:
-    llm: LLMInterface = BedrockLLM()
+    llm: LLMInterface = BedrockLLM(storage=st.session_state.storage)
     st.session_state.llm = llm
 
 chat = ChatInterface()

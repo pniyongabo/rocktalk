@@ -1,10 +1,11 @@
+from datetime import datetime
 import os
 from typing import Optional
 
 import boto3
 import streamlit as st
 from botocore.exceptions import NoCredentialsError
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, Field, SecretStr
 from utils.log import logger
 
 
@@ -13,6 +14,7 @@ class AwsCredentials(BaseModel):
     aws_secret_access_key: SecretStr
     aws_session_token: Optional[SecretStr] = None
     aws_region: str
+    created_at: datetime = Field(default_factory=datetime.now)
 
 
 def get_aws_credentials(use_streamlit_secrets: bool = True) -> AwsCredentials:
@@ -91,10 +93,3 @@ def get_cached_aws_credentials() -> AwsCredentials:
     """
     credentials = get_aws_credentials()
     return credentials
-
-
-# # Validate AWS credentials
-# get_cached_aws_credentials()
-# if not all([aws_access_key_id, aws_secret_access_key, aws_region]):
-#     st.error("Missing AWS credentials. Please check your configuration.")
-#     st.stop()

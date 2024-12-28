@@ -1,10 +1,9 @@
 """Chat interface module for handling user-AI conversations with support for text and images."""
 
-from datetime import datetime
 from typing import Optional, cast
 
 import streamlit as st
-from langchain.schema import BaseMessage, HumanMessage
+from langchain.schema import BaseMessage
 from langchain_core.messages import AIMessage
 from models.interfaces import ChatMessage, ChatSession, TurnState
 from models.llm import LLMInterface
@@ -62,17 +61,6 @@ class ChatInterface:
         self._handle_chat_input()
         self._generate_ai_response()
 
-    def get_system_message(self) -> ChatMessage | None:
-        if st.session_state.llm.get_config().system:
-            return ChatMessage(
-                session_id=st.session_state.current_session_id or "",
-                role="system",
-                content=str(st.session_state.llm.get_config().system),
-                index=-1,
-            )
-        else:
-            return None
-
     def _stop_chat_stream(self):
         st.toast("Stopping stream")
         st.session_state.stop_chat_stream = True
@@ -84,7 +72,7 @@ class ChatInterface:
         if "theme" in st.session_state and st.session_state.theme:
             adjust_chat_message_style()
 
-        system_message = self.get_system_message()
+        system_message = self.llm.get_state_system_message()
         if system_message:
             system_message.display()
 
@@ -181,29 +169,6 @@ class ChatInterface:
             # Set state for AI to respond
             st.session_state.turn_state = TurnState.AI_TURN
 
-    def _convert_messages_to_llm_format(self) -> list[BaseMessage]:
-        """Convert stored ChatMessages to LLM format.
-
-        Returns:
-            List of BaseMessage objects in LLM format.
-        """
-        messages = []
-
-        system_message = self.get_system_message()
-        if system_message:
-            messages.append(system_message.convert_to_llm_message())
-
-        messages.extend(
-            [msg.convert_to_llm_message() for msg in st.session_state.messages]
-        )
-
-        return messages
-
-    def clear_session(self):
-        st.session_state.current_session_id = None
-        st.session_state.messages = []
-        self.llm.update_config()
-
     def load_session(self, session_id: str) -> ChatSession:
         session = self.storage.get_session(session_id)
         st.session_state.current_session_id = session_id
@@ -219,7 +184,7 @@ class ChatInterface:
         if st.session_state.turn_state == TurnState.AI_TURN:
 
             # Convert messages to LLM format
-            llm_messages: list[BaseMessage] = self._convert_messages_to_llm_format()
+            llm_messages: list[BaseMessage] = self.llm.convert_messages_to_llm_format()
 
             with st.container(border=True, key="assistant_message_container_streaming"):
                 # Generate and display AI response
@@ -310,7 +275,7 @@ class ChatInterface:
 
                     # Create new session if none exists
                     if not st.session_state.current_session_id:
-                        title: str = self._generate_session_title()
+                        title: str = self.llm.generate_session_title()
                         config = self.llm.get_config().model_copy(deep=True)
                         new_session: ChatSession = ChatSession(
                             title=title, config=config
@@ -330,37 +295,3 @@ class ChatInterface:
                     # Update state for next human input
                     st.session_state.turn_state = TurnState.HUMAN_TURN
                     st.rerun()
-
-    def _generate_session_title(self) -> str:
-        """Generate a concise session title using the LLM.
-
-        Returns:
-            A concise title for the chat session (2-4 words).
-
-        Note:
-            Falls back to timestamp-based title if LLM fails to generate one.
-        """
-        logger.info("Generating session title...")
-
-        title_prompt: HumanMessage = HumanMessage(
-            content=f"""Summarize this conversation's topic in up to 5 words or about 28 characters.
-            More details are useful, but space is limited to show this summary, so ideally 2-4 words.
-            Be direct and concise, no explanations needed. If there are missing messages, do the best you can to keep the summary short."""
-        )
-        title_response: BaseMessage = self.llm.invoke(
-            [*self._convert_messages_to_llm_format(), title_prompt]
-        )
-        title_content: str | list[str | dict] = title_response.content
-
-        if isinstance(title_content, str):
-            title: str = title_content.strip('" \n').strip()
-        else:
-            logger.warning(f"Unexpected generated title response: {title_content}")
-            return f"Chat {datetime.now()}"
-
-        # Fallback to timestamp if we get an empty or invalid response
-        if not title:
-            title = f"Chat {datetime.now()}"
-
-        logger.info(f"New session title: {title}")
-        return title

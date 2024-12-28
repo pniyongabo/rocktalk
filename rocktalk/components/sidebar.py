@@ -36,11 +36,11 @@ class Sidebar:
         """Render New Chat and Settings buttons"""
         options_map: PillOptions = {
             0: {
-                "label": ":material/add: New Chat",
+                "label": "\+ New Chat",  #:material/add:
                 "callback": self._create_new_chat,
             },
             1: {
-                "label": ":material/settings: Settings",
+                "label": ":material/settings:",
                 "callback": self._open_global_settings,
             },
             # 2: {  # Add templates option
@@ -49,7 +49,7 @@ class Sidebar:
             # },
         }
 
-        st.pills(
+        st.segmented_control(
             "Chat Sessions",
             options=options_map.keys(),
             format_func=lambda option: options_map[option]["label"],
@@ -85,7 +85,7 @@ class Sidebar:
             if group_sessions.empty:
                 continue
 
-            st.subheader(group_name)
+            st.write(f"{group_name}")
             for _, session in group_sessions.iterrows():
                 self._render_session_item(session)
             st.divider()
@@ -122,29 +122,31 @@ class Sidebar:
 
     def _apply_header_styles(self):
         """Apply CSS styles to the header section"""
-        st.markdown(
-            """
-            <style>
-            .st-key-chat_sessions p {
-                font-size: min(15px, 1rem) !important;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
+        container_key = "chat_sessions"
+        # st.markdown(
+        #     f"""
+        #     <style>
+        #     .st-key-{container_key} p {{
+        #         font-size: min(15px, 1rem) !important;
+        #     }}
+        #     </style>
+        #     """,
+        #     unsafe_allow_html=True,
+        # )
+        self._apply_session_list_styles(container_key=container_key)
 
-    def _apply_session_list_styles(self):
+    def _apply_session_list_styles(self, container_key="session_list"):
         """Apply CSS styles to the session list"""
         st.markdown(
-            """
+            f"""
             <style>
-            .st-key-session_list [data-testid="stMarkdownContainer"] :not(hr) {
+            .st-key-{container_key} [data-testid="stMarkdownContainer"] :not(hr) {{
                 min-width: 200px !important;
                 max-width: 200px !important;
                 overflow: hidden !important;
                 text-overflow: ellipsis !important;
                 white-space: nowrap !important;
-            }
+            }}
             </style>
             """,
             unsafe_allow_html=True,
@@ -153,7 +155,7 @@ class Sidebar:
     # Action handlers
     def _create_new_chat(self):
         """Handle new chat creation"""
-        self.chat_interface.clear_session()
+        SettingsManager(storage=self.storage).clear_session()
         # st.rerun() # is a no-op within callback
 
     def _load_session(self, session_id: str):
@@ -163,10 +165,10 @@ class Sidebar:
 
     def _open_global_settings(self):
         """Open global settings dialog"""
-        SettingsManager.clear_cached_settings_vars()
+        SettingsManager(storage=self.storage).clear_cached_settings_vars()
         general_options()
 
     def _open_session_settings(self, df_session):
         """Open session settings dialog"""
-        SettingsManager.clear_cached_settings_vars()
+        SettingsManager(storage=self.storage).clear_cached_settings_vars()
         session_settings(df_session=df_session)

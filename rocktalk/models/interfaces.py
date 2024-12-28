@@ -85,50 +85,6 @@ class LLMConfig(BaseModel):
     stop_sequences: List[str] = Field(default_factory=list)
     system: Optional[str] = None
 
-    # guardrail_config: Optional[Dict[str, Any]] = None
-    # additional_model_request_fields: Optional[Dict[str, Any]] = None
-    # additional_model_response_field_paths: Optional[List[str]] = None
-    # disable_streaming: bool = False
-    # supports_tool_choice_values: Optional[Sequence[Literal["auto", "any", "tool"]]] = (
-    #     None
-    # )
-
-    def get_parameters(self) -> LLMParameters:
-        return self.parameters
-
-    @staticmethod
-    def get_default() -> "LLMConfig":
-        global _DEFAULT_LLM_CONFIG
-        if _DEFAULT_LLM_CONFIG:
-            return _DEFAULT_LLM_CONFIG
-        else:
-            config = LLMConfig(
-                bedrock_model_id="anthropic.claude-3-5-sonnet-20241022-v2:0",
-                parameters=LLMParameters(temperature=0.5),
-            )
-            LLMConfig.set_default(config)
-            return config
-        # # This would need to be updated to get the storage instance
-        # from storage.sqlite_storage import SQLiteChatStorage
-
-        # storage = SQLiteChatStorage()
-        # templates = storage.get_chat_templates()
-        # print(pprint.pformat(templates))
-        # # Get the "Balanced" template or the first preset if "Balanced" doesn't exist
-        # template = next(
-        #     (template for template in templates if template.name == "Balanced"),
-        #     templates[0] if templates else None,
-        # )
-        # if template:
-        #     print("getting default LLM config, returning template")
-        #     return LLMConfig.model_validate(template.config)
-        # Fallback default if no presets exist
-
-    @staticmethod
-    def set_default(llm_config: "LLMConfig") -> None:
-        global _DEFAULT_LLM_CONFIG
-        _DEFAULT_LLM_CONFIG = llm_config.model_copy(deep=True)
-
 
 class TurnState(Enum):
     """Enum representing the current turn state in the conversation.
@@ -147,8 +103,8 @@ class TurnState(Enum):
 class ChatTemplate(BaseModel):
     name: str
     description: str
+    config: LLMConfig
     template_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    config: LLMConfig = Field(default_factory=LLMConfig.get_default)
 
 
 class ChatMessage(BaseModel):
@@ -194,7 +150,7 @@ class ChatMessage(BaseModel):
                 False,
             ):
                 st.session_state.edit_message_value = self, None
-                st.session_state["confirm_delete_message_edit_dialog"] = None
+                del st.session_state["confirm_delete_message_edit_dialog"]
                 close_dialog()
                 st.rerun()
             else:
@@ -209,10 +165,11 @@ class ChatMessage(BaseModel):
                 if isinstance(self.content, str):
                     text = self.content
                 elif isinstance(self.content, list):
+                    text_list: List[str] = []
                     for item in self.content:
                         if isinstance(item, dict):
                             if item["type"] == "text":
-                                text += item["text"]
+                                text_list.append(item["text"])
                             elif item["type"] == "image":
                                 pil_image: ImageFile = image_from_b64_image(
                                     item["source"]["data"]
@@ -222,7 +179,8 @@ class ChatMessage(BaseModel):
                                     image=pil_image, width=min(width, MAX_IMAGE_WIDTH)
                                 )
                         else:
-                            text = str(item)
+                            text_list.append(str(item))
+                    text = "".join(text_list)
                 if text:
                     st.markdown(text)
 
@@ -286,6 +244,27 @@ class ChatMessage(BaseModel):
                 content=self.content, additional_kwargs={"role": "assistant"}
             )
         raise ValueError(f"Unsupported message role: {self.role}")
+
+    @staticmethod
+    def from_system_message(
+        system_message: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> Optional["ChatMessage"]:
+        """Convert ChatMessage to LangChain SystemMessage.
+
+        Returns:
+            LangChain SystemMessage object.
+        """
+        return (
+            ChatMessage(
+                session_id=session_id or "",
+                role="system",
+                content=str(system_message),
+                index=-1,
+            )
+            if system_message
+            else None
+        )
 
     @staticmethod
     def create_from_prompt(
@@ -356,10 +335,10 @@ class ChatMessage(BaseModel):
 
 class ChatSession(BaseModel):
     title: str
+    config: LLMConfig
     session_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     created_at: datetime = Field(default_factory=datetime.now)
     last_active: datetime = Field(default_factory=datetime.now)
-    config: LLMConfig = Field(default_factory=LLMConfig.get_default)
 
 
 class ChatExport(BaseModel):

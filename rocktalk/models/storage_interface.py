@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 
 from models.interfaces import (
     ChatMessage,
@@ -86,9 +86,34 @@ class StorageInterface(ABC):
         """Rename a chat session"""
         ...
 
+    @abstractmethod
+    def set_default_template(self, template_id: str) -> None:
+        """Set a template as the default
+
+        Args:
+            template_id: ID of the template to set as default
+
+        Raises:
+            ValueError: If template_id doesn't exist
+        """
+        ...
+
+    @abstractmethod
+    def get_default_template(self) -> ChatTemplate:
+        """Get the current default template
+
+        Returns:
+            The default template if one is set, None otherwise
+        """
+        ...
+
     @staticmethod
-    def get_default_templates() -> List[ChatTemplate]:
-        """Get the default chat templates"""
+    def get_preset_templates() -> List[ChatTemplate]:
+        """Get the preset chat templates
+
+        Note: These are preset templates, different from user-set default template.
+        Used for initial setup and reset to defaults.
+        """
         return [
             ChatTemplate(
                 name="Balanced",
@@ -127,8 +152,13 @@ class StorageInterface(ABC):
         ...
 
     @abstractmethod
-    def get_chat_template(self, template_id: str) -> ChatTemplate:
-        """Get a specific chat template"""
+    def get_chat_template_by_id(self, template_id: str) -> ChatTemplate:
+        """Get a specific chat template by id"""
+        ...
+
+    @abstractmethod
+    def get_chat_template_by_name(self, template_name: str) -> ChatTemplate:
+        """Get a specific chat template by name"""
         ...
 
     @abstractmethod

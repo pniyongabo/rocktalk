@@ -1,7 +1,9 @@
 import hmac
 import os
+from tempfile import template
 import time
 from datetime import datetime
+from tkinter import W
 from typing import List, Optional
 
 import dotenv
@@ -12,11 +14,14 @@ from models.interfaces import (
     ChatTemplate,
     LLMConfig,
 )
-from models.storage_interface import StorageInterface
-from services.bedrock import BedrockService, FoundationModelSummary
-from utils.log import logger
 
-from rocktalk.models.interfaces import ChatMessage
+
+from models.storage_interface import StorageInterface
+from models.llm import LLMInterface
+from utils.log import logger
+from services.creds import get_cached_aws_credentials
+
+from models.interfaces import ChatMessage
 
 from .parameter_controls import ParameterControls
 
@@ -25,6 +30,8 @@ dotenv.load_dotenv()
 
 # Check for deployment environment
 DEPLOYED = os.getenv("DEPLOYED", "true").lower() == "true"
+
+PAUSE_BEFORE_RELOADING = 2  # seconds
 
 
 def get_password() -> Optional[str]:
@@ -65,12 +72,29 @@ def check_password() -> bool:
     st.text_input(
         "Password", type="password", on_change=password_entered, key="password"
     )
+    # TODO fix this. weird logic?
     if "password_correct" in st.session_state:
         st.error("😕 Password incorrect")
     return False
 
 
+CUSTOM_TEMPLATE_NAME = "Custom"
+
+
 class SettingsManager:
+    vars_to_init = {
+        "create_template_action": None,
+        "edit_template_action": None,
+        "set_default_action": None,
+        "delete_template_action": None,
+        "refresh_title_action": None,
+        "new_title": None,
+        "confirm_reset": None,
+        "confirm_delete": None,
+        "confirm_delete_template": None,
+        "temp_template_name": None,
+        "temp_template_description": None,
+    }
 
     def __init__(
         self,
@@ -79,9 +103,29 @@ class SettingsManager:
     ):
         self.session = session
         self.storage = storage
+        self.llm: LLMInterface = st.session_state.llm
 
         # Initialize temp config if needed
         self.initialize_temp_config()
+
+    def clear_cached_settings_vars(self):
+        """Clear cached settings variables"""
+        vars_to_clear = [
+            "temp_llm_config",
+            "providers_reorder",
+            "current_provider",
+            "model_providers",
+            "ordered_providers",
+            *self.vars_to_init.keys(),
+        ]
+        for var in vars_to_clear:
+            if var in st.session_state:
+                del st.session_state[var]
+
+    def rerun(self):
+        """Rerun the app"""
+        self.clear_cached_settings_vars()
+        st.rerun()
 
     def initialize_temp_config(self):
         """Initialize temporary configuration state"""
@@ -90,51 +134,82 @@ class SettingsManager:
             or st.session_state.temp_llm_config is None
         ):
             if self.session:
+                # we're editing settings for a particular session
                 st.session_state.temp_llm_config = self.session.config.model_copy(
                     deep=True
                 )
-            else:
+            elif st.session_state.current_session_id:
+                # we've opened general settings while a session is active/displayed, use default template
                 st.session_state.temp_llm_config = (
-                    st.session_state.llm.get_config().model_copy(deep=True)
+                    self.storage.get_default_template().config
+                )
+            else:
+                # general settings, no session active (new chat/session)
+                st.session_state.temp_llm_config = self.llm.get_config().model_copy(
+                    deep=True
                 )
 
-    def render_apply_settings(self):
+            st.session_state.original_config = (
+                st.session_state.temp_llm_config.model_copy(deep=True)
+            )
+            matching_template = self._get_matching_template(
+                st.session_state.original_config
+            )
+            st.session_state.original_template = (
+                matching_template.name if matching_template else CUSTOM_TEMPLATE_NAME
+            )
+
+        for var, default_value in self.vars_to_init.items():
+            if var not in st.session_state:
+                st.session_state[var] = default_value
+
+    def render_apply_settings(self, set_as_default: bool = False):
         """
         Apply current temporary settings
         Returns True if successful
         """
-        set_as_default = st.checkbox(
-            "Set as default configuration",
-            help="These settings will be used for new sessions",
-        )
 
-        if st.button("Apply Settings", type="primary"):
+        apply_settings_text = "Apply Settings"
+        if st.session_state.current_session_id and not self.session:
+            apply_settings_text = "Apply Settings to New Session"
+
+        if st.button(apply_settings_text, type="primary"):
             try:
-                st.session_state.llm.update_config(st.session_state.temp_llm_config)
-                if self.session:
-                    assert self.storage
-                    self.session.config = st.session_state.temp_llm_config
-                    self.session.last_active = datetime.now()
-                    self.storage.update_session(self.session)
+                current_template = self._get_matching_template(
+                    st.session_state.temp_llm_config
+                )
+                if current_template:
+                    if set_as_default:
+                        self._set_default_template(current_template)
 
-                if set_as_default:
-                    LLMConfig.set_default(st.session_state.temp_llm_config)
+                if st.session_state.current_session_id and not self.session:
+                    # we're editing general settings while another session is active, Apply will create a new session
+                    self.clear_session(config=st.session_state.temp_llm_config)
+                else:
+                    self.llm.update_config(st.session_state.temp_llm_config)
 
-                SettingsManager.clear_cached_settings_vars()
+                    if self.session:
+                        assert self.storage
+                        self.session.config = st.session_state.temp_llm_config
+                        self.session.last_active = datetime.now()
+                        self.storage.update_session(self.session)
+
                 st.success(body="Settings applied successfully!")
-                time.sleep(1)
-                st.rerun()
+                time.sleep(PAUSE_BEFORE_RELOADING)
+                self.rerun()
             except Exception as e:
                 st.error(f"Error applying settings: {str(e)}")
+
+    def clear_session(self, config: Optional[LLMConfig] = None):
+        st.session_state.current_session_id = None
+        st.session_state.messages = []
+        self.llm.update_config(config=config)
 
     def render_settings_dialog(self):
         """Render the settings dialog"""
 
-        # if st.session_state.current_session_id is None:
-        # Render controls
-        self.render_model_selector()
+        self.render_template_management()
 
-        # self.render_parameter_controls()
         controls = ParameterControls(
             read_only=False,
             show_help=True,
@@ -144,138 +219,16 @@ class SettingsManager:
         # Save settings
         self.render_apply_settings()
 
-    @staticmethod
-    def clear_cached_settings_vars():
-        """Clear cached settings variables"""
-        vars_to_clear = [
-            "temp_llm_config",
-            "temp_llm_preset",
-            "llm_preset",
-            "providers_reorder",
-            "current_provider",
-            "model_providers",
-            "ordered_providers",
-        ]
-        for var in vars_to_clear:
-            if var in st.session_state:
-                del st.session_state[var]
+    def render_refresh_credentials(self):
+        if st.button("Refresh AWS Credentials"):
+            get_cached_aws_credentials.clear()
+            self.llm.update_config(st.session_state.original_config)
+            st.success("Credentials refreshed successfully!")
 
     @staticmethod
     def update_config(config: LLMConfig):
         """Update the current temp LLM configuration"""
         st.session_state.temp_llm_config = config.model_copy(deep=True)
-
-    @staticmethod
-    def render_model_summary(current_model: FoundationModelSummary) -> None:
-        """Display read-only summary of a config"""
-        config: LLMConfig = st.session_state.temp_llm_config
-        st.markdown(
-            f"""
-                    **Model:** {current_model.model_name}\n
-                    **Model ID:** {current_model.bedrock_model_id}"""
-        )
-
-    @staticmethod
-    def get_current_model() -> FoundationModelSummary | None:
-        return next(
-            (
-                m
-                for m in st.session_state.available_models
-                if m.bedrock_model_id
-                == st.session_state.temp_llm_config.bedrock_model_id
-            ),
-            None,
-        )
-
-    @staticmethod
-    def render_model_selector() -> None:
-        """Render model selection UI"""
-        if "available_models" not in st.session_state:
-            try:
-                st.session_state.available_models = (
-                    BedrockService.get_compatible_models()
-                )
-            except Exception as e:
-                st.error(f"Error getting compatible models: {e}")
-                st.session_state.available_models = []
-
-        if not st.session_state.available_models:
-            return
-
-        current_model: FoundationModelSummary | None = (
-            SettingsManager.get_current_model()
-        )
-
-        if current_model:
-            SettingsManager.render_model_summary(current_model=current_model)
-
-        with st.expander("Change Model", expanded=False):
-            if (
-                "model_providers" not in st.session_state
-                or st.session_state.model_providers is None
-            ):
-                providers = {}
-                for model in st.session_state.available_models:
-                    provider = model.provider_name or "Other"
-                    if provider not in providers:
-                        providers[provider] = []
-                    providers[provider].append(model)
-                st.session_state.model_providers = providers
-
-            if (
-                "current_provider" not in st.session_state
-                or st.session_state.current_provider is None
-            ):
-                st.session_state.current_provider = (
-                    current_model.provider_name if current_model else None
-                )
-
-            if (
-                "ordered_providers" not in st.session_state
-                or st.session_state.ordered_providers is None
-            ):
-                st.session_state.ordered_providers = sorted(
-                    st.session_state.model_providers.keys(),
-                    key=lambda x: x != st.session_state.current_provider,
-                )
-
-            provider_tabs = st.tabs(st.session_state.ordered_providers)
-            for tab, provider in zip(provider_tabs, st.session_state.ordered_providers):
-                with tab:
-                    for model in st.session_state.model_providers[provider]:
-                        st.divider()
-                        col1, col2 = st.columns([0.7, 0.3])
-                        with col1:
-                            st.markdown(f"**{model.bedrock_model_id}**")
-                            if model.model_name:
-                                st.markdown(f"*{model.model_name}*")
-                        with col2:
-                            st.button(
-                                "Select",
-                                key=f"select_{model.bedrock_model_id}",
-                                type=(
-                                    "primary"
-                                    if (
-                                        model.bedrock_model_id
-                                        == st.session_state.temp_llm_config.bedrock_model_id
-                                    )
-                                    else "secondary"
-                                ),
-                                on_click=lambda p=provider, m=model.bedrock_model_id: SettingsManager._set_model(
-                                    provider=p, model_id=m
-                                ),
-                            )
-
-    @staticmethod
-    def _set_model(provider: str, model_id: str):
-        """Internal method to set the model configuration"""
-        st.session_state.temp_llm_config.bedrock_model_id = model_id
-        if st.session_state.temp_llm_config.parameters.max_output_tokens:
-            st.session_state.temp_llm_config.parameters.max_output_tokens = min(
-                st.session_state.temp_llm_config.parameters.max_output_tokens,
-                BedrockService.get_max_output_tokens(model_id),
-            )
-        st.session_state.current_provider = provider
 
     def render_session_actions(self):
         """Render session action buttons and dialogs"""
@@ -283,7 +236,17 @@ class SettingsManager:
         st.divider()
 
         # Save settings
-        self.render_apply_settings()
+        current_template = self._get_matching_template(st.session_state.temp_llm_config)
+        if current_template:
+            # only allow setting as default if a current template is found/in use i.e. not Custom
+            set_as_default = st.checkbox(
+                "Set as default configuration",
+                help="These settings will be used for new sessions",
+            )
+        else:
+            set_as_default = False
+
+        self.render_apply_settings(set_as_default=set_as_default)
 
         st.divider()
 
@@ -292,9 +255,6 @@ class SettingsManager:
         with col1:
             if st.button("Copy to New Session", use_container_width=True):
                 self._show_copy_session_dialog()
-
-            if st.button("Reset to Original Settings", use_container_width=True):
-                self._reset_session_settings()
 
         with col2:
             if st.button("Export Session", use_container_width=True):
@@ -321,7 +281,7 @@ class SettingsManager:
                     config=(
                         self.session.config.model_copy(deep=True)
                         if copy_settings
-                        else LLMConfig.get_default()
+                        else (self.storage.get_default_template().config)
                     ),
                 )
                 self.storage.store_session(new_session)
@@ -333,23 +293,13 @@ class SettingsManager:
                         self.storage.save_message(msg)
 
                 st.success("Session copied successfully!")
-                st.rerun()
+                time.sleep(PAUSE_BEFORE_RELOADING)
+                self.rerun()
 
-    def _reset_session_settings(self):
+    def _reset_settings(self):
         """Reset session settings to default template"""
-        assert self.session, "Session not initialized"
-        if st.session_state.get("confirm_reset", False):
-            default_config = LLMConfig.get_default()
-            # Preserve system prompt
-            default_config.system = self.session.config.system
-            self.session.config = default_config
-            self.storage.update_session(self.session)
-            st.success("Settings reset to default")
-            st.session_state.confirm_reset = False
-            st.rerun()
-        else:
-            st.session_state.confirm_reset = True
-            st.warning("Click again to confirm reset")
+        if st.button("Reset", use_container_width=True):
+            st.session_state.temp_llm_config = st.session_state.original_config
 
     def _render_debug_tab(self):
         """Render debug information tab"""
@@ -361,7 +311,7 @@ class SettingsManager:
 
         st.markdown("# 🔍 Debug Information")
 
-        st.json(session.model_dump())
+        st.json(session.model_dump(), expanded=0)
 
         # Recent messages
         st.markdown("#### Recent Messages")
@@ -387,12 +337,45 @@ class SettingsManager:
         """Session configuration UI"""
         assert self.session, "Session not initialized"
         # Session info
-        self.session.title = st.text_input("Session Title", self.session.title)
+        col1, col2 = st.columns((0.9, 0.1))
+        with col1:
+            self.session.title = st.text_input("Session Title", self.session.title)
+
+        with col2:
+            st.markdown("<BR>", unsafe_allow_html=True)
+            if st.button(":material/refresh:"):
+                st.session_state.refresh_title_action = True
+                st.session_state.new_title = self.llm.generate_session_title(
+                    self.session
+                )
+
+        # Show confirmation for new title
+        if st.session_state.refresh_title_action:
+            st.info(f"New suggested title: {st.session_state.new_title}")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("Accept"):
+                    # self.session.title = st.session_state.new_title
+                    self.storage.rename_session(
+                        self.session.session_id, st.session_state.new_title
+                    )
+                    st.session_state.refresh_title_action = False
+                    del st.session_state.new_title
+                    st.success("Title updated")
+                    time.sleep(PAUSE_BEFORE_RELOADING)
+                    self.rerun()
+            with col2:
+                if st.button("Cancel"):
+                    st.session_state.refresh_title_action = False
+                    del st.session_state.new_title
+                    self.rerun()
+
         st.text(f"Session ID: {self.session.session_id}")
         st.text(f"Created: {self.session.created_at}")
 
-        # Template selector
-        self.render_template_selector(current_config=self.session.config)
+        self.render_template_selector()
+
+        self._show_config_diff()
 
         # Model settings
         controls = ParameterControls(
@@ -418,10 +401,14 @@ class SettingsManager:
     def _confirm_delete_session(self):
         """Show delete confirmation dialog"""
         assert self.session, "Session not initialized"
-        if st.session_state.get("confirm_delete", False):
+        if st.session_state.confirm_delete:
             self.storage.delete_session(self.session.session_id)
+            if self.session.session_id == st.session_state.current_session_id:
+                st.session_state.current_session_id = None
+                st.session_state.messages = []
+                self.llm.update_config()
             st.success("Session deleted")
-            st.rerun()
+            self.rerun()
         else:
             st.session_state.confirm_delete = True
             st.warning("Click again to confirm deletion")
@@ -433,9 +420,10 @@ class SettingsManager:
         Recursively format parameter differences between configurations.
         Returns a list of markdown formatted diff strings.
         """
-        logger.info(
-            f"_format_parameter_diff: {param_name} old: {old_val}, new: {new_val}"
-        )
+        if old_val != new_val and (old_val or new_val):
+            logger.debug(
+                f"_format_parameter_diff: {param_name} old: {old_val}, new: {new_val}"
+            )
         diffs = []
         indent_str = "  " * indent
 
@@ -458,26 +446,23 @@ class SettingsManager:
 
         return diffs
 
-    def _show_template_preview(self, template: ChatTemplate):
+    def _show_config_diff(self):
         """Show preview dialog when applying template to session"""
         assert self.storage, "Storage not initialized"
         assert self.session, "Session not initialized"
 
-        # st.dialog("Preview Changes")
         st.markdown("### Changes that will be applied:")
-
-        temp_template_config: LLMConfig = template.config.model_copy(deep=True)
+        temp_config: LLMConfig = st.session_state.temp_llm_config
+        # temp_template_config: LLMConfig = template.config.model_copy(deep=True)
         temp_session_config: LLMConfig = self.session.config.model_copy(deep=True)
-        temp_template_config.system = None
-        temp_session_config.system = None
 
         # Compare and show differences by iterating through model fields directly
         all_diffs = []
-        for field_name in template.config.model_fields.keys():
+        for field_name in temp_config.model_fields.keys():
             param_diffs = self._format_parameter_diff(
                 field_name,
                 getattr(temp_session_config, field_name),
-                getattr(temp_template_config, field_name),
+                getattr(temp_config, field_name),
             )
             all_diffs.extend(param_diffs)
 
@@ -496,161 +481,161 @@ class SettingsManager:
                 return template
         return None
 
-    def render_template_selector(
-        self,
-        current_config: LLMConfig,
-    ):
+    def render_template_selector(self) -> Optional[ChatTemplate]:
         """Shared template selection UI"""
+        current_config = st.session_state.temp_llm_config
         templates: List[ChatTemplate] = self.storage.get_chat_templates()
 
-        # Add "Custom" option if config doesn't match any template
-        matching_template = self._get_matching_template(current_config)
-        template_names = ["Custom"] + [t.name for t in templates]
+        # Get currently selected template name from selectbox key in session state, or None on first render
+        template_selectbox_key = "template_selectbox_key"
+        current_selection = st.session_state.get(template_selectbox_key, None)
 
-        selected_idx = (
-            0 if not matching_template else template_names.index(matching_template.name)
+        # Get currently selected template name from session state
+        if current_selection is None:
+            matching_template = self._get_matching_template(current_config)
+            if matching_template:
+                current_selection = matching_template.name
+            else:
+                current_selection = CUSTOM_TEMPLATE_NAME
+
+        template_names = [CUSTOM_TEMPLATE_NAME] + [t.name for t in templates]
+        selected_idx = template_names.index(current_selection)
+
+        st.markdown(f"### Original Template: {st.session_state.original_template}")
+        with st.expander("Configuration", expanded=False):
+            st.json(st.session_state.original_config.model_dump_json())
+
+        selected = st.selectbox(
+            "Template to Apply",
+            template_names,
+            index=selected_idx,
+            key=template_selectbox_key,
+            on_change=self._on_template_selected,
+            kwargs=dict(selector_key=template_selectbox_key, templates=templates),
         )
+        if selected != CUSTOM_TEMPLATE_NAME:
+            return self.storage.get_chat_template_by_name(selected)
+        else:
+            return None
 
-        selected = st.selectbox("Template", template_names, index=selected_idx)
+    # def _render_existing_templates(self):
+    #     """Render the list of existing templates with actions"""
+    #     templates: List[ChatTemplate] = self.storage.get_chat_templates()
 
-        if selected != "Custom":
-            selected_template = next(t for t in templates if t.name == selected)
-            # if st.button("Apply Template"):
-            if self.session:
-                self._show_template_preview(selected_template)
+    #     for template in templates:
+    #         with st.expander(template.name):
+    #             st.markdown(f"**Description:** {template.description}")
+    #             # For read-only view
+    #             controls = ParameterControls(
+    #                 read_only=True,
+    #                 show_json=True,
+    #                 truncate_system_prompt=True,
+    #                 show_help=False,
+    #             )
+    #             controls.render_parameters(config=template.config)
 
-            self._on_template_selected(selected_template)
+    #             col1, col2 = st.columns(2)
+    #             with col1:
+    #                 if st.button("Use", key=f"use_{template.template_id}"):
+    #                     SettingsManager.update_config(template.config)
+    #                     self.rerun()
+    #             with col2:
+    #                 if st.button("Delete", key=f"delete_{template.template_id}"):
+    #                     self.storage.delete_chat_template(template.template_id)
+    #                     self.rerun()
 
-    def _render_existing_templates(self):
-        """Render the list of existing templates with actions"""
-        templates: List[ChatTemplate] = self.storage.get_chat_templates()
-
-        for template in templates:
-            with st.expander(template.name):
-                st.markdown(f"**Description:** {template.description}")
-                # For read-only view
-                controls = ParameterControls(
-                    read_only=True,
-                    show_json=True,
-                    truncate_system_prompt=True,
-                    show_help=False,
-                )
-                controls.render_parameters(config=template.config)
-
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("Use", key=f"use_{template.template_id}"):
-                        SettingsManager.update_config(template.config)
-                        st.rerun()
-                with col2:
-                    if st.button("Delete", key=f"delete_{template.template_id}"):
-                        self.storage.delete_chat_template(template.template_id)
-                        st.rerun()
-
-    def _render_new_template_form(self):
-        """Render the form for creating a new template"""
-        with st.form("new_template"):
-            name = st.text_input("Name", help="Template name")
-            description = st.text_area("Description", help="Template description")
-
-            # Initialize temp config if needed
-            if (
-                "temp_llm_config" not in st.session_state
-                or st.session_state.temp_llm_config is None
-            ):
-                st.session_state.temp_llm_config = LLMConfig.get_default()
-
-            # Model selection
-            st.subheader("Model Configuration")
-            SettingsManager.render_model_selector()
-
-            # Parameter controls
-            st.subheader("Parameters")
-            # For editable controls
-            controls = ParameterControls(
-                read_only=False,
-                show_help=True,
-            )
-            controls.render_parameters(st.session_state.temp_llm_config)
-
-            if st.form_submit_button("Create Template"):
-                if not name or not description:
-                    st.error("Please provide both name and description")
-                    return
-
-                template = ChatTemplate(
-                    name=name,
-                    description=description,
-                    config=st.session_state.temp_llm_config,
-                )
-                self.storage.store_chat_template(template)
-
-                # Clear temporary config
-                SettingsManager.clear_cached_settings_vars()
-                st.rerun()
-
-    def _on_template_selected(self, template: ChatTemplate):
+    def _on_template_selected(self, selector_key: str, templates: List[ChatTemplate]):
         """Handle template selection"""
         # Create new config from template
-        new_config = template.config.model_copy(deep=True)
+        template_name: str = st.session_state[selector_key]
 
-        if self.session:
-            # preserve system prompt
-            new_config.system = self.session.config.system
-            st.session_state.temp_llm_config = new_config.model_copy(deep=True)
+        if template_name == CUSTOM_TEMPLATE_NAME:
+            if st.session_state.original_template == CUSTOM_TEMPLATE_NAME:
+                # reset to original settings
+                new_config = st.session_state.original_config.model_copy(deep=True)
+            else:
+                # switching from a named template to Custom, so just copy current temp settings (i.e. no changes to custom)
+                new_config = st.session_state.temp_llm_config.model_copy(deep=True)
         else:
-            st.session_state.temp_llm_config = template.config.model_copy(deep=True)
+            # we picked a named template, so apply the settings
+            template = next(t for t in templates if t.name == template_name)
+            new_config = template.config.model_copy(deep=True)
 
-    def _set_default_template(self):
-        """Set current configuration as default template"""
-        current_config = st.session_state.temp_llm_config
-        template = ChatTemplate(
-            name="Default",
-            description="Default configuration template",
-            config=current_config,
-        )
-        self.storage.store_chat_template(template)
-        st.success("Settings saved as default template")
+        # preserve system prompt
+        if self.session:
+            new_config.system = self.session.config.system
 
-    def _show_save_template_dialog(self):
-        """Show dialog to save current settings as a new template"""
-        with st.form("save_template_form"):
-            name = st.text_input("Template Name")
-            description = st.text_area("Description")
+        st.session_state.temp_llm_config = new_config
 
-            if st.form_submit_button("Save Template"):
-                if not name:
-                    st.error("Template name is required")
-                    return
-
-                template = ChatTemplate(
-                    name=name,
-                    description=description,
-                    config=st.session_state.temp_llm_config,
-                )
-                self.storage.store_chat_template(template)
-                st.success(f"Template '{name}' saved successfully")
+    def _set_default_template(self, template: ChatTemplate):
+        """Set an existing template as default"""
+        try:
+            self.storage.set_default_template(template.template_id)
+            st.success(f"Set '{template.name}' as default template")
+        except Exception as e:
+            st.error(f"Failed to set default template: {str(e)}")
 
     def render_template_management(self):
         """Template management UI"""
-        current_config = st.session_state.temp_llm_config
-        matching_template = self._get_matching_template(current_config)
+        # print("template management rendered")
+        # matching_template = self._get_matching_template(current_config)
 
-        st.markdown(
-            f"**Current Settings:** {matching_template.name if matching_template else 'Custom'}"
-        )
+        # st.markdown(
+        #     f"**Current Settings:** {matching_template.name if matching_template else 'Custom'}"
+        # )
 
-        self.render_template_selector(current_config)
+        template = self.render_template_selector()
 
         # Template actions
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("Set as Default"):
-                self._set_default_template()
+        col1, col2, col3, col4 = st.columns(4)
 
-        with col2:
+        with col1:
             if st.button("Save as Template"):
-                self._show_save_template_dialog()
+                # if st.session_state.create_template_action:
+                #     # press the button once the template action is shown to cancel the form render
+                #     st.session_state.create_template_action = False
+                #     st.session_state.edit_template_action = False
+                # else:
+                #     st.session_state.create_template_action = True
+                st.session_state.create_template_action = (
+                    not st.session_state.create_template_action
+                )
+                st.session_state.edit_template_action = False
+        with col2:
+            # Only enable edit button if a template is selected
+            if st.button("Edit Template", disabled=not template):
+                # Toggle edit action and clear create action
+                st.session_state.edit_template_action = (
+                    not st.session_state.edit_template_action
+                )
+                st.session_state.create_template_action = False
+
+        with col3:
+            if st.button("Delete Template", disabled=not template):
+                st.session_state.delete_template_action = True
+
+        with col4:
+            if st.button("Set as Default", disabled=not template):
+                st.session_state.set_default_action = True
+
+        if (
+            st.session_state.create_template_action
+            or st.session_state.edit_template_action
+        ):
+            self.render_save_template_form(
+                template=template if st.session_state.edit_template_action else None
+            )
+
+        if st.session_state.set_default_action and template:
+            self._set_default_template(template)
+            st.session_state.set_default_action = False
+
+        if st.session_state.delete_template_action and template:
+            try:
+                self.storage.delete_chat_template(template.template_id)
+                st.success(f"Template '{template.name}' deleted")
+            except:
+                st.error(f"Failed to delete template '{template.name}'")
 
     def _render_import_export(self):
         """Render import/export functionality"""
@@ -682,7 +667,7 @@ class SettingsManager:
                 try:
                     self._process_import_file(uploaded_file)
                     st.success("Conversation imported successfully!")
-                    st.rerun()
+                    self.rerun()
                 except Exception as e:
                     st.error(f"Error importing conversation: {str(e)}")
                     raise e
@@ -743,23 +728,14 @@ class SettingsManager:
             st.warning("⚠️ This will delete ALL sessions and messages!")
 
             if st.form_submit_button(":material/delete_forever: Reset All Data"):
-                if self._confirm_reset():
-                    self._perform_reset()
-                    st.rerun()
+                if st.session_state.confirm_reset:
+                    st.session_state.storage.delete_all_sessions()
+                    st.session_state.current_session_id = None
+                    st.session_state.messages = []
+                    self.rerun()
                 else:
-                    st.session_state["confirm_reset"] = True
+                    st.session_state.confirm_reset = True
                     st.warning("Click again to confirm reset")
-
-    def _confirm_reset(self) -> bool:
-        """Check if reset has been confirmed"""
-        return st.session_state.get("confirm_reset", False)
-
-    def _perform_reset(self):
-        """Perform the actual reset operation"""
-        st.session_state.storage.delete_all_sessions()
-        st.session_state.current_session_id = None
-        st.session_state.messages = []
-        SettingsManager.clear_cached_settings_vars()
 
     def render_template_browser(self):
         """Render template list with actions"""
@@ -797,12 +773,12 @@ class SettingsManager:
         with col1:
             if st.button("Use", key=f"use_{template.template_id}"):
                 self.update_config(template.config)
-                st.rerun()
+                self.rerun()
         with col2:
             if not is_default and st.button(
                 "Set as Default", key=f"default_{template.template_id}"
             ):
-                self._set_as_default_template(template)
+                self._set_default_template(template)
         with col3:
             if not is_default and st.button(
                 "Delete", key=f"delete_{template.template_id}"
@@ -811,21 +787,80 @@ class SettingsManager:
 
     def render_template_creator(self):
         """Render template creation form"""
-        with st.form("new_template"):
-            name = st.text_input("Name", help="Template name")
-            description = st.text_area("Description", help="Template description")
 
-            st.subheader("Model Configuration")
-            self.render_model_selector()
+        st.subheader("Model Configuration")
+        controls = ParameterControls(read_only=False, show_help=True)
+        controls.render_parameters(st.session_state.temp_llm_config)
 
-            st.subheader("Parameters")
-            controls = ParameterControls(read_only=False, show_help=True)
-            controls.render_parameters(st.session_state.temp_llm_config)
+        self.render_save_template_form()
 
-            if st.form_submit_button("Create Template"):
-                if self._validate_and_save_template(name, description):
-                    st.success(f"Template '{name}' created successfully")
-                    st.rerun()
+    def render_save_template_form(self, template: Optional[ChatTemplate] = None):
+        logger.info(f"Got template: {template}")
+        with st.form("template_form"):
+            name = st.text_input(
+                "Name", help="Template name", value=template.name if template else ""
+            )
+
+            description = st.text_area(
+                "Description",
+                help="Template description",
+                value=template.description if template else "",
+            )
+            # logger.info(f"inputs template name={name} description={description}")
+
+            if st.form_submit_button(
+                "Update Template" if template else "Create Template",
+            ):
+                # if name != st.session_state.temp_template_name:
+                #     st.session_state.temp_template_name = name
+                # if description != st.session_state.temp_template_description:
+                #     st.session_state.temp_template_description = description
+
+                # logger.info(
+                #     f"session state template name={st.session_state.temp_template_name} description={st.session_state.temp_template_description}"
+                # )
+                if self._validate_and_save_template(
+                    name=name, description=description, template=template
+                ):
+                    # st.session_state.create_template_action = None
+                    # st.session_state.edit_template_action = None
+                    self.rerun()
+
+    def _validate_and_save_template(
+        self, name: str, description: str, template: Optional[ChatTemplate]
+    ) -> bool:
+        """Validate and save new template"""
+        # name = st.session_state.temp_template_name
+        # description = st.session_state.temp_template_description
+
+        if not name or not description:
+            st.error("Please provide both name and description")
+            time.sleep(PAUSE_BEFORE_RELOADING)
+            return False
+
+        templates = self.storage.get_chat_templates()
+        if any(t.name == name for t in templates):
+            st.error(f"Template with name '{name}' already exists")
+            time.sleep(PAUSE_BEFORE_RELOADING)
+            return False
+
+        if template:
+            template.name = name
+            template.description = description
+            self.storage.update_chat_template(template)
+        else:
+            new_template = ChatTemplate(
+                name=name,
+                description=description,
+                config=st.session_state.temp_llm_config,
+            )
+            self.storage.store_chat_template(new_template)
+
+        st.success(
+            f"Template '{name}' {'updated' if template else 'created'} successfully"
+        )
+        time.sleep(PAUSE_BEFORE_RELOADING)
+        return True
 
     def render_template_import_export(self):
         """Handle template import/export"""
@@ -849,43 +884,24 @@ class SettingsManager:
                     key=f"export_{template.template_id}",
                 )
 
-    # Helper methods
-    def _validate_and_save_template(self, name: str, description: str) -> bool:
-        """Validate and save new template"""
-        if not name or not description:
-            st.error("Please provide both name and description")
-            return False
-
-        existing = self.storage.get_chat_templates()
-        if any(t.name == name for t in existing):
-            st.error(f"Template with name '{name}' already exists")
-            return False
-
-        template = ChatTemplate(
-            name=name, description=description, config=st.session_state.temp_llm_config
-        )
-        self.storage.store_chat_template(template)
-        return True
-
-    def _set_as_default_template(self, template: ChatTemplate):
-        """Set template as default"""
-        # Create copy with name "Default"
-        default_template = ChatTemplate(
-            name="Default",
-            description=f"Default template (copied from {template.name})",
-            config=template.config.model_copy(deep=True),
-        )
-        self.storage.store_chat_template(default_template)
-        st.success(f"Set '{template.name}' as default template")
+    # def _set_as_default_template(self, template: ChatTemplate):
+    #     """Set template as default"""
+    #     # Create copy with name "Default"
+    #     default_template = ChatTemplate(
+    #         name="Default",
+    #         description=f"Default template (copied from {template.name})",
+    #         config=template.config.model_copy(deep=True),
+    #     )
+    #     self.storage.store_chat_template(default_template)
+    #     st.success(f"Set '{template.name}' as default template")
 
     def _delete_template(self, template_id: str):
         """Delete template with confirmation"""
-        if st.session_state.get(f"confirm_delete_template_{template_id}", False):
+        if st.session_state.confirm_delete_template:
             self.storage.delete_chat_template(template_id)
             st.success("Template deleted")
-            st.rerun()
         else:
-            st.session_state[f"confirm_delete_template_{template_id}"] = True
+            st.session_state.confirm_delete_template = True
             st.warning("Click again to confirm deletion")
 
     def _handle_template_import(self, uploaded_file):

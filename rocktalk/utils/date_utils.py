@@ -12,21 +12,14 @@ def create_date_masks(
 ) -> Tuple[List[Tuple[str, pd.Series]], pd.DataFrame]:
     """
     Creates time-based masks for a DataFrame containing session data.
-
-    This function takes session data and creates boolean masks to categorize sessions into
-    different time periods: Current month, past 11 months, and then by year for older sessions.
-
-    Args:
-        recent_sessions (List[ChatSession]): List of ChatSession objects containing session data
-
-    Returns:
-        Tuple[List[Tuple[str, pd.Series]], pd.DataFrame]: A tuple containing:
-            - List of tuples, where each tuple contains:
-                - A string label for the time period (e.g., "July 2023")
-                - A boolean mask (pandas Series) indicating which sessions belong to that time period
-            - The processed DataFrame of sessions
+    Groups sessions into:
+    - Today (MM/DD/YYYY)
+    - Yesterday (MM/DD/YYYY)
+    - This Week (MM/DD - MM/DD/YYYY)
+    - This Month (Month YYYY)
+    - Previous months (Month YYYY)
+    - Over a year ago
     """
-    # Convert the list of ChatSession objects to a DataFrame
     df_sessions = pd.DataFrame([session.model_dump() for session in recent_sessions])
 
     # Ensure datetime columns are in the correct format
@@ -34,33 +27,78 @@ def create_date_masks(
     df_sessions["created_at"] = pd.to_datetime(df_sessions["created_at"])
 
     now = datetime.now()
-    current_month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    yesterday_start = today_start - pd.Timedelta(days=1)
+    week_start = today_start - pd.Timedelta(days=today_start.weekday())
+    month_start = today_start.replace(day=1)
+    year_ago = today_start - pd.DateOffset(years=1)
 
     masks = []
+    already_grouped = pd.Series(False, index=df_sessions.index)
 
-    # Create masks for the current month and past 11 months
-    for i in range(12):
-        month_start = current_month_start - pd.DateOffset(months=i)
-        month_end = month_start + pd.DateOffset(months=1)
-        month_label = month_start.strftime("%B %Y")
+    # Today's sessions
+    today_mask = df_sessions["last_active"] >= today_start
+    if today_mask.any():
+        today_label = f"Today ({today_start.strftime('%m/%d/%Y')})"
+        masks.append((today_label, today_mask))
+        already_grouped |= today_mask
 
-        mask = (df_sessions["last_active"] >= month_start) & (
-            df_sessions["last_active"] < month_end
+    # Yesterday's sessions
+    yesterday_mask = (
+        (df_sessions["last_active"] >= yesterday_start)
+        & (df_sessions["last_active"] < today_start)
+        & ~already_grouped
+    )
+    if yesterday_mask.any():
+        yesterday_label = f"Yesterday ({yesterday_start.strftime('%m/%d/%Y')})"
+        masks.append((yesterday_label, yesterday_mask))
+        already_grouped |= yesterday_mask
+
+    # This week's sessions (excluding today and yesterday)
+    week_mask = (
+        (df_sessions["last_active"] >= week_start)
+        & (df_sessions["last_active"] < yesterday_start)
+        & ~already_grouped
+    )
+    if week_mask.any():
+        week_label = f"This Week ({week_start.strftime('%m/%d')} - {yesterday_start.strftime('%m/%d/%Y')})"
+        masks.append((week_label, week_mask))
+        already_grouped |= week_mask
+
+    # This month's sessions (excluding already grouped sessions)
+    month_mask = (
+        (df_sessions["last_active"] >= month_start)
+        & (df_sessions["last_active"] < today_start)
+        & ~already_grouped
+    )
+    if month_mask.any():
+        month_label = f"This Month ({month_start.strftime('%B %Y')})"
+        masks.append((month_label, month_mask))
+        already_grouped |= month_mask
+
+    # Create masks for previous 11 months
+    for i in range(1, 12):
+        period_end = month_start - pd.DateOffset(months=i - 1)
+        period_start = month_start - pd.DateOffset(months=i)
+        month_label = period_start.strftime("%B %Y")
+
+        month_mask = (
+            (df_sessions["last_active"] >= period_start)
+            & (df_sessions["last_active"] < period_end)
+            & ~already_grouped
         )
-        masks.append((month_label, mask))
 
-    # Create masks for previous years
-    oldest_date = df_sessions["last_active"].min()
-    current_year = now.year
+        # Always append the month even if empty to maintain consistency
+        masks.append((month_label, month_mask))
+        if month_mask.any():
+            already_grouped |= month_mask
 
-    for year in range(current_year - 1, oldest_date.year - 1, -1):
-        year_start = datetime(year, 1, 1)
-        year_end = datetime(year + 1, 1, 1)
-        year_mask = (df_sessions["last_active"] >= year_start) & (
-            df_sessions["last_active"] < year_end
-        )
-
-        if year_mask.any():
-            masks.append((str(year), year_mask))
+    # Over a year ago
+    older_mask = (df_sessions["last_active"] < year_ago) & ~already_grouped
+    if older_mask.any():
+        oldest_date = df_sessions[older_mask]["last_active"].min()
+        newest_date = df_sessions[older_mask]["last_active"].max()
+        older_label = f"Over a year ago ({oldest_date.strftime('%m/%d/%Y')} - {newest_date.strftime('%m/%d/%Y')})"
+        masks.append((older_label, older_mask))
 
     return masks, df_sessions
