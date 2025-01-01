@@ -471,7 +471,7 @@ class ParameterControls:
 
     def render_parameters(self, config: LLMConfig) -> None:
         """Main method to render all parameters"""
-        st.subheader("Model Settings")
+        # st.subheader("Model Settings")
         logger.debug(f"Rendering parameters for config: {config}")
 
         self.render_model_selector()

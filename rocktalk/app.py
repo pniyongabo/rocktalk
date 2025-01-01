@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as stcomponents
 from components.chat import ChatInterface
 from components.sidebar import Sidebar
-from config.settings import DEPLOYED, check_password
+from config.password import DEPLOYED, check_password
 from models.llm import BedrockLLM, LLMInterface
 from pydantic import BaseModel
 from storage.sqlite_storage import SQLiteChatStorage

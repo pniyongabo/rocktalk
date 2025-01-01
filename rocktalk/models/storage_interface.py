@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from models.interfaces import (
     ChatMessage,
@@ -25,9 +25,22 @@ class StorageInterface(ABC):
         ...
 
     @abstractmethod
-    def search_sessions(self, query: str) -> List[ChatSession]:
-        """Search sessions by content or title"""
-        ...
+    def search_sessions(
+        self,
+        query: str,
+        search_titles: bool = True,
+        search_content: bool = True,
+        date_range: Optional[Tuple[datetime, datetime]] = None,
+    ) -> List[ChatSession]:
+        """
+        Search sessions with advanced filtering
+
+        Args:
+            query: Search query (supports SQL LIKE wildcards)
+            search_titles: Whether to search session titles
+            search_content: Whether to search message content
+            date_range: Optional tuple of (start_date, end_date) to filter by
+        """
 
     @abstractmethod
     def get_active_sessions_by_date_range(

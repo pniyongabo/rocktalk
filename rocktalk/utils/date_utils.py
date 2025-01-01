@@ -29,7 +29,7 @@ def create_date_masks(
     now = datetime.now()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     yesterday_start = today_start - pd.Timedelta(days=1)
-    week_start = today_start - pd.Timedelta(days=today_start.weekday())
+    week_start = today_start - pd.Timedelta(days=7)  # today_start.weekday()
     month_start = today_start.replace(day=1)
     year_ago = today_start - pd.DateOffset(years=1)
 
@@ -61,7 +61,7 @@ def create_date_masks(
         & ~already_grouped
     )
     if week_mask.any():
-        week_label = f"This Week ({week_start.strftime('%m/%d')} - {yesterday_start.strftime('%m/%d/%Y')})"
+        week_label = f"Past Week ({week_start.strftime('%m/%d')} - {yesterday_start.strftime('%m/%d/%Y')})"
         masks.append((week_label, week_mask))
         already_grouped |= week_mask
 

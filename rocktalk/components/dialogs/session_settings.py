@@ -14,8 +14,8 @@ def session_settings(df_session: pd.Series):
     tab1, tab2, tab3 = st.tabs(["Settings", "Export", "Debug Info"])
 
     with tab1:
-        settings.render_session_settings()
         settings.render_session_actions()
+        settings.render_session_settings()
     with tab2:
         settings._render_import_export()
     with tab3:

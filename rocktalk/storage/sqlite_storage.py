@@ -2,12 +2,13 @@ import json
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from config.settings import LLMConfig
 from models.interfaces import ChatMessage, ChatSession, ChatTemplate
 from models.storage_interface import StorageInterface
 from utils.datetime_utils import format_datetime, parse_datetime
+from utils.log import logger
 
 
 class SQLiteChatStorage(StorageInterface):
@@ -233,24 +234,97 @@ class SQLiteChatStorage(StorageInterface):
             )
             return [self._deserialize_message(row) for row in cursor.fetchall()]
 
-    def search_sessions(self, query: str) -> List[ChatSession]:
-        """Search sessions by content or title"""
+    def search_sessions(
+        self,
+        query: str,
+        search_titles: bool = True,
+        search_content: bool = True,
+        date_range: Optional[Tuple[Optional[datetime], Optional[datetime]]] = None,
+    ) -> List[ChatSession]:
+        """
+        Search sessions with advanced filtering
+
+        Args:
+            query: Search query (supports SQL LIKE wildcards)
+            search_titles: Whether to search session titles
+            search_content: Whether to search message content
+            date_range: Optional tuple of (start_date, end_date) to filter by
+        """
+        logger.info(
+            f"Searching sessions with filters: search_titles={search_titles}, search_content={search_content}, date_range={date_range} | query: {query}"
+        )
         with self.get_connection() as conn:
-            cursor = conn.execute(
+            query_conditions = []
+            date_conditions = []
+            params = []
+
+            # Add wildcards around search term for partial matching
+            search_pattern = f"%{query}%"
+
+            if search_titles:
+                query_conditions.append("s.title LIKE ?")
+                params.append(search_pattern)
+
+            if search_content:
+                # For single string content
+                query_conditions.append(
+                    """
+                    (json_type(m.content) = 'text' AND m.content LIKE ?)
                 """
+                )
+                params.append(search_pattern)
+
+                # For array of content items
+                query_conditions.append(
+                    """
+                    (json_type(m.content) = 'array' AND 
+                    EXISTS (
+                        SELECT 1 
+                        FROM json_each(m.content) as items 
+                        WHERE 
+                            (json_extract(items.value, '$.type') = 'text' AND
+                            json_extract(items.value, '$.text') LIKE ?)
+                    ))
+                """
+                )
+                params.append(search_pattern)
+
+            if date_range:
+                start_date, end_date = date_range
+                if start_date and end_date:
+                    date_conditions.append("m.timestamp BETWEEN ? AND ?")
+                    params.extend(
+                        [format_datetime(start_date), format_datetime(end_date)]
+                    )
+                elif start_date:
+                    date_conditions.append("m.timestamp >= ?")
+                    params.append(format_datetime(start_date))
+                elif end_date:
+                    date_conditions.append("m.timestamp <= ?")
+                    params.append(format_datetime(end_date))
+
+                # Combine conditions
+            where_clause = f"({' OR '.join(query_conditions)})"
+            if date_conditions:
+                where_clause += f" AND ({' AND '.join(date_conditions)})"
+
+            command_str = f"""
                 SELECT DISTINCT
                     s.*,
                     MAX(m.timestamp) as last_message,
                     COUNT(m.message_id) as message_count
                 FROM sessions s
                 LEFT JOIN messages m ON s.session_id = m.session_id
-                WHERE m.content LIKE ?
-                OR s.title LIKE ?
+                WHERE {where_clause}
                 GROUP BY s.session_id
                 ORDER BY MAX(m.timestamp) DESC NULLS LAST
-            """,
-                (f"%{query}%", f"%{query}%", f"%{query}%"),
+                """
+            logger.info(f"Executing SQL command: {command_str} with params {params}")
+            cursor = conn.execute(
+                command_str,
+                params,
             )
+
             return [self._deserialize_session(row) for row in cursor.fetchall()]
 
     def get_active_sessions_by_date_range(
