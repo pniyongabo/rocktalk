@@ -1,13 +1,14 @@
 import pandas as pd
 import streamlit as st
 from config.settings import SettingsManager
+from models.interfaces import ChatSession
 
 
 @st.dialog("Session Settings")
-def session_settings(df_session: pd.Series):
-    session_id = df_session["session_id"]
+def session_settings(session: ChatSession):
+    # session_id = df_session["session_id"]
     storage = st.session_state.storage
-    session = storage.get_session(session_id)
+    # session = storage.get_session(session.session_id)
 
     settings = SettingsManager(session=session, storage=storage)
 

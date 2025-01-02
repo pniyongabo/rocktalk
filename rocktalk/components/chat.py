@@ -147,6 +147,8 @@ class ChatInterface:
                     max_image_size=5 * 1024 * 1024,
                     default=st.session_state.user_input_default,
                 )
+                if chat_prompt_return:
+                    logger.info(f"Received user input:\n{chat_prompt_return}")
         focus_prompt(prompt_container_key)
         st.session_state.user_input_default = None
 
@@ -169,7 +171,9 @@ class ChatInterface:
             # Set state for AI to respond
             st.session_state.turn_state = TurnState.AI_TURN
 
-    def load_session(self, session_id: str) -> ChatSession:
+    def load_session(self, session_id: str):
+        if st.session_state.current_session_id == session_id:
+            return
         session = self.storage.get_session(session_id)
         st.session_state.current_session_id = session_id
         st.session_state.messages = self.storage.get_messages(session.session_id)
@@ -177,7 +181,6 @@ class ChatInterface:
         # Load session settings
         self.llm.update_config(session.config)
         logger.info(f"Loaded session {session.session_id} with config {session.config}")
-        return session
 
     def _generate_ai_response(self) -> None:
         """Generate and display an AI response."""

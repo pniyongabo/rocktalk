@@ -1,8 +1,13 @@
+from typing import List
 import streamlit as st
-from models.storage_interface import StorageInterface
+from models.storage_interface import SearchOperator, StorageInterface
 from models.interfaces import ChatMessage, ChatSession, ChatExport
 from components.chat import ChatInterface
 from utils.log import logger
+from streamlit_tags import st_tags
+from config.settings import SettingsManager
+from components.dialogs.session_settings import session_settings
+from functools import partial
 
 
 @st.dialog("Search")
@@ -17,15 +22,30 @@ class SearchInterface:
         self.chat_interface = chat_interface
         self.init_state()
 
+    @staticmethod
+    def clear_cached_settings_vars():
+        vars_to_clear = [
+            "search_filters",
+            "search_results",
+            "search_terms",
+            "search_dialog_reloads",
+        ]
+        for var in vars_to_clear:
+            try:
+                del st.session_state[var]
+            except:
+                pass
+
     def init_state(self):
         """Initialize session state for search"""
-        if "search_query" not in st.session_state:
-            st.session_state.search_query = ""
+        if "search_terms" not in st.session_state:
+            st.session_state.search_terms = []
         if "search_filters" not in st.session_state:
             st.session_state.search_filters = {
                 "titles": True,
                 "content": True,
                 "date_range": None,
+                "operator": SearchOperator.AND,
             }
         if "search_results" not in st.session_state:
             st.session_state.search_results = []
@@ -33,29 +53,30 @@ class SearchInterface:
     def render(self):
         """Render search interface"""
         # Search input
-        col1, col2 = st.columns([0.9, 0.1])
-        with col1:
-            query = st.text_input(
-                "Search",
-                value=st.session_state.search_query,
-                placeholder="Enter search terms (use * for wildcards)",
-                help="Search session titles and content",
-            )
-        with col2:
-            st.markdown("####")  # Spacing
-            if st.button(":material/search:", use_container_width=True):
-                st.session_state.search_query = query
-                self.perform_search()
+        st.session_state.search_terms = st_tags(
+            label="Search Terms",
+            text="Enter search terms (press enter after each)",
+        )
+        logger.info(f"search terms: {st.session_state.search_terms}")
 
         # Search filters
         with st.expander("Search Filters", expanded=True):
             self.render_filters()
 
+        # st.divider()
+
+        if st.session_state.search_terms:
+            self.perform_search()
+        else:
+            st.session_state.search_results = []
+            st.warning("Please enter at least one search term")
+
         # Results
-        if st.session_state.search_results:
+        if st.session_state.search_terms and st.session_state.search_results:
             self.render_results()
-        elif st.session_state.search_query:
+        elif st.session_state.search_terms:
             st.info("No results found")
+        logger.info(str(st.session_state.search_results)[:100])
 
     def render_filters(self):
         """Render search filter options"""
@@ -69,16 +90,32 @@ class SearchInterface:
                 "Search content", value=st.session_state.search_filters["content"]
             )
 
+            # Add operator selection
+            st.session_state.search_filters["operator"] = (
+                SearchOperator.AND
+                if st.radio(
+                    "Search Logic",
+                    options=["Match ALL terms", "Match ANY term"],
+                    index=(
+                        0
+                        if st.session_state.search_filters["operator"]
+                        == SearchOperator.AND
+                        else 1
+                    ),
+                    horizontal=True,
+                    help="Choose how to combine search terms",
+                )
+                == "Match ALL terms"
+                else SearchOperator.OR
+            )
+
         with col2:
             start_date = st.date_input(
                 "Start date", value=None, help="Filter by start date"
             )
             end_date = st.date_input("End date", value=None, help="Filter by end date")
 
-            logger.info(f"start: {start_date}, end: {end_date}")
             if start_date or end_date:
-                # if isinstance(dates, tuple) and len(dates) == 2:
-                # start_date, end_date = dates
                 st.session_state.search_filters["date_range"] = (
                     start_date,
                     end_date,
@@ -88,20 +125,21 @@ class SearchInterface:
 
     def perform_search(self):
         """Execute search with current query and filters"""
-        if not st.session_state.search_query:
+        if not st.session_state.search_terms:
             st.session_state.search_results = []
             return
 
-        query = st.session_state.search_query
+        terms = st.session_state.search_terms
         filters = st.session_state.search_filters
 
         # Convert wildcards to SQL LIKE syntax
-        query = query.replace("*", "%")
+        terms = [term.replace("*", "%") for term in terms]
 
         try:
             # Get matching sessions
             matching_sessions = self.storage.search_sessions(
-                query=query,
+                query=terms,
+                operator=filters["operator"],
                 search_titles=filters["titles"],
                 search_content=filters["content"],
                 date_range=filters["date_range"],
@@ -112,7 +150,9 @@ class SearchInterface:
             for session in matching_sessions:
                 messages = self.storage.get_messages(session.session_id)
                 matching_messages = [
-                    msg for msg in messages if query.lower() in str(msg.content).lower()
+                    msg
+                    for msg in messages
+                    if any(term.lower() in str(msg.content).lower() for term in terms)
                 ]
 
                 results.append(
@@ -129,18 +169,13 @@ class SearchInterface:
         st.markdown("### Search Results")
 
         for result in st.session_state.search_results:
-            session = result["session"]
-            messages = result["matching_messages"]
+            session: ChatSession = result["session"]
+            messages: List[ChatMessage] = result["matching_messages"]
 
             with st.expander(f"**{session.title}** ({len(messages)} matches)"):
                 # Session metadata
                 # st.text(f"Created: {session.created_at}")
                 st.text(f"Last active: {session.last_active}")
-
-                # Matching messages
-                if messages:
-                    for msg in messages:
-                        self.render_message_preview(msg)
 
                 # Actions
                 col1, col2 = st.columns(2)
@@ -153,27 +188,53 @@ class SearchInterface:
                         self.chat_interface.load_session(session_id=session.session_id)
                         st.rerun()
                 with col2:
-                    messages = self.storage.get_messages(session.session_id)
-                    export_data = ChatExport(session=session, messages=messages)
-
-                    st.download_button(
-                        "Download Session",
-                        data=export_data.model_dump_json(indent=2),
-                        file_name=f"session_{session.session_id}.json",
-                        mime="application/json",
+                    if st.button(
+                        "Sessions",
+                        key=f"settings_{session.session_id}",
                         use_container_width=True,
-                    )
+                    ):
+                        SettingsManager(
+                            storage=self.storage
+                        ).clear_cached_settings_vars()
+                        # TODO can't open dialog from another dialog!
+                        st.session_state.next_run_callable = partial(
+                            session_settings, session=session
+                        )
+                        st.rerun()
+
+                    # messages = self.storage.get_messages(session.session_id)
+                    # export_data = ChatExport(session=session, messages=messages)
+
+                    # st.download_button(
+                    #     "Download Session",
+                    #     data=export_data.model_dump_json(indent=2),
+                    #     file_name=f"session_{session.session_id}.json",
+                    #     mime="application/json",
+                    #     use_container_width=True,
+                    # )
+
+                # Matching messages
+                if messages:
+                    for msg in messages:
+                        self.render_message_preview(msg)
 
     def render_message_preview(self, message: ChatMessage):
         """Render preview of a matching message"""
-        # Get snippet around matching text
         content = str(message.content)
-        query = st.session_state.search_query.replace("*", "")
-        idx = content.lower().find(query.lower())
+        terms = st.session_state.search_terms
 
-        if idx >= 0:
+        # Find first matching term and its position
+        matches = []
+        for term in terms:
+            idx = content.lower().find(term.lower())
+            if idx >= 0:
+                matches.append((idx, term))
+
+        if matches:
+            # Use the first match for the preview
+            idx, matching_term = min(matches, key=lambda x: x[0])
             start = max(0, idx - 50)
-            end = min(len(content), idx + len(query) + 50)
+            end = min(len(content), idx + len(matching_term) + 50)
             snippet = "..." + content[start:end] + "..."
 
             with st.container():

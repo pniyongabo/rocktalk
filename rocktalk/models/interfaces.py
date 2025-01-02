@@ -219,7 +219,7 @@ class ChatMessage(BaseModel):
                             options_map=options_map,
                         )
                     ),
-                    label_visibility="hidden",
+                    label_visibility="collapsed",
                 )
 
     def convert_to_llm_message(self) -> BaseMessage:

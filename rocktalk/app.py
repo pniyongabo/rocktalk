@@ -46,6 +46,9 @@ if (
     st.subheader(
         f"{app_config.page_title}: Powered by AWS Bedrock 🪨 + LangChain 🦜️🔗 + Streamlit 👑"
     )
+if "next_run_callable" in st.session_state:
+    st.session_state.next_run_callable()
+    del st.session_state["next_run_callable"]
 
 st.markdown(
     """

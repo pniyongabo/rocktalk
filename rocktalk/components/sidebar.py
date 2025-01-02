@@ -3,13 +3,15 @@ from functools import partial
 import streamlit as st
 from config.settings import SettingsManager
 from models.storage_interface import StorageInterface
+from rocktalk.models.interfaces import ChatSession
 from utils.date_utils import create_date_masks
 from utils.streamlit_utils import OnPillsChange, PillOptions, on_pills_change
 from functools import partial
 from .chat import ChatInterface
 from .dialogs.general_options import general_options
 from .dialogs.session_settings import session_settings
-from .dialogs.search import search_dialog
+from .dialogs.search import search_dialog, SearchInterface
+import pandas as pd
 
 
 class Sidebar:
@@ -43,11 +45,7 @@ class Sidebar:
             },
             1: {
                 "label": ":material/search:",
-                "callback": partial(
-                    search_dialog,
-                    storage=self.storage,
-                    chat_interface=self.chat_interface,
-                ),
+                "callback": self.open_search_dialog,
             },
             2: {
                 "label": ":material/settings:",
@@ -68,7 +66,7 @@ class Sidebar:
                     options_map=options_map,
                 )
             ),
-            label_visibility="hidden",
+            label_visibility="collapsed",
         )
 
     def render_session_list(self):
@@ -81,6 +79,21 @@ class Sidebar:
                 st.info("No chat sessions yet")
                 return
 
+            if (
+                st.session_state.current_session_id
+                # and recent_sessions[0].session_id != st.session_state.current_session_id
+            ):
+                session = self.storage.get_session(
+                    session_id=st.session_state.current_session_id
+                )
+                st.markdown("#### Active session")
+                self.render_session_item(
+                    session_id=session.session_id,
+                    session_title=session.title,
+                    active=True,
+                )
+                st.divider()
+
             groups, df_sessions = create_date_masks(recent_sessions=recent_sessions)
             self.render_session_groups(groups, df_sessions)
 
@@ -91,40 +104,55 @@ class Sidebar:
             if group_sessions.empty:
                 continue
 
-            st.write(f"{group_name}")
-            for _, session in group_sessions.iterrows():
-                self.render_session_item(session)
-            st.divider()
+            # Track if we actually displayed any sessions in this group
+            sessions_displayed = False
 
-    def render_session_item(self, df_session):
+            # Buffer the sessions that will be displayed
+            session_elements = []
+            for _, session in group_sessions.iterrows():
+                # Skip if this is the current active session
+                if session["session_id"] == st.session_state.current_session_id:
+                    continue
+                session_elements.append(session)
+                sessions_displayed = True
+
+            # Only display group name and sessions if we have sessions to show
+            if sessions_displayed:
+                st.write(f"{group_name}")
+                for session in session_elements:
+                    session_id = session["session_id"]
+                    session_title = session["title"]
+                    self.render_session_item(session_id, session_title)
+                st.divider()
+
+    def render_session_item(self, session_id: str, session_title: str, active=False):
         """Render individual session item with actions"""
         options_map: PillOptions = {
             0: {
-                "label": f"{df_session['title']}",
-                "callback": partial(self.load_session, df_session["session_id"]),
+                "label": session_title,
+                "callback": partial(self.load_session, session_id),
             },
             1: {
                 "label": ":material/settings:",
-                "callback": partial(self.open_session_settings, df_session),
+                "callback": partial(self.open_session_settings, session_id),
             },
         }
 
-        session_key = f"session_{df_session['session_id']}"
+        session_key = f"session_{session_id}{'_active' if active else ''}"
         st.segmented_control(
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+            session_title,
             options=options_map.keys(),
             format_func=lambda option: options_map[option]["label"],
             selection_mode="single",
             key=session_key,
             on_change=on_pills_change,
-            # help=f'{df_session["last_active"].strftime("%m/%d/%Y %I:%M %p")}',
             kwargs=dict(
                 OnPillsChange(
                     key=session_key,
                     options_map=options_map,
                 )
             ),
-            label_visibility="hidden",
+            label_visibility="collapsed",
         )
 
     def apply_header_styles(self, header_key: str):
@@ -175,7 +203,15 @@ class Sidebar:
         SettingsManager(storage=self.storage).clear_cached_settings_vars()
         general_options()
 
-    def open_session_settings(self, df_session):
+    def open_session_settings(self, session_id: str):
         """Open session settings dialog"""
         SettingsManager(storage=self.storage).clear_cached_settings_vars()
-        session_settings(df_session=df_session)
+        session_settings(session=self.storage.get_session(session_id=session_id))
+
+    def open_search_dialog(self):
+        """Open session settings dialog"""
+        SearchInterface.clear_cached_settings_vars()
+        search_dialog(
+            storage=self.storage,
+            chat_interface=self.chat_interface,
+        )

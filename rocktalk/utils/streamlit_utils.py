@@ -99,7 +99,7 @@ def on_pills_change(**kwargs: Unpack[OnPillsChange]):
                     options_map=options_map
                 )
             ),
-            label_visibility="hidden"
+            label_visibility="collapsed"
         )
         ```
     """

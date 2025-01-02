@@ -6,7 +6,7 @@ from typing import List, Optional, Tuple
 
 from config.settings import LLMConfig
 from models.interfaces import ChatMessage, ChatSession, ChatTemplate
-from models.storage_interface import StorageInterface
+from models.storage_interface import SearchOperator, StorageInterface
 from utils.datetime_utils import format_datetime, parse_datetime
 from utils.log import logger
 
@@ -236,59 +236,57 @@ class SQLiteChatStorage(StorageInterface):
 
     def search_sessions(
         self,
-        query: str,
+        query: List[str],
+        operator: SearchOperator = SearchOperator.AND,
         search_titles: bool = True,
         search_content: bool = True,
-        date_range: Optional[Tuple[Optional[datetime], Optional[datetime]]] = None,
+        date_range: Optional[Tuple[datetime, datetime]] = None,
     ) -> List[ChatSession]:
-        """
-        Search sessions with advanced filtering
-
-        Args:
-            query: Search query (supports SQL LIKE wildcards)
-            search_titles: Whether to search session titles
-            search_content: Whether to search message content
-            date_range: Optional tuple of (start_date, end_date) to filter by
-        """
-        logger.info(
-            f"Searching sessions with filters: search_titles={search_titles}, search_content={search_content}, date_range={date_range} | query: {query}"
-        )
+        """Search sessions with multi-term support"""
         with self.get_connection() as conn:
             query_conditions = []
-            date_conditions = []
             params = []
 
-            # Add wildcards around search term for partial matching
-            search_pattern = f"%{query}%"
+            # Build query for each search term
+            for term in query:
+                term_conditions = []
+                search_pattern = f"%{term}%"
 
-            if search_titles:
-                query_conditions.append("s.title LIKE ?")
-                params.append(search_pattern)
+                if search_titles:
+                    term_conditions.append("s.title LIKE ?")
+                    params.append(search_pattern)
 
-            if search_content:
-                # For single string content
-                query_conditions.append(
-                    """
-                    (json_type(m.content) = 'text' AND m.content LIKE ?)
-                """
-                )
-                params.append(search_pattern)
+                if search_content:
+                    # For single string content
+                    term_conditions.append(
+                        "(json_type(m.content) = 'text' AND m.content LIKE ?)"
+                    )
+                    params.append(search_pattern)
 
-                # For array of content items
-                query_conditions.append(
-                    """
-                    (json_type(m.content) = 'array' AND 
-                    EXISTS (
-                        SELECT 1 
-                        FROM json_each(m.content) as items 
-                        WHERE 
-                            (json_extract(items.value, '$.type') = 'text' AND
-                            json_extract(items.value, '$.text') LIKE ?)
-                    ))
-                """
-                )
-                params.append(search_pattern)
+                    # For array content items
+                    term_conditions.append(
+                        """
+                        (json_type(m.content) = 'array' AND 
+                        EXISTS (
+                            SELECT 1 
+                            FROM json_each(m.content) as items 
+                            WHERE 
+                                (json_extract(items.value, '$.type') = 'text' AND
+                                json_extract(items.value, '$.text') LIKE ?)
+                        ))
+                        """
+                    )
+                    params.append(search_pattern)
 
+                # Combine conditions for this term
+                term_query = f"({' OR '.join(term_conditions)})"
+                query_conditions.append(term_query)
+
+            # Combine all term conditions with AND/OR
+            where_clause = f" {operator} ".join(query_conditions)
+
+            # Add date range if specified
+            date_conditions = []
             if date_range:
                 start_date, end_date = date_range
                 if start_date and end_date:
@@ -303,10 +301,8 @@ class SQLiteChatStorage(StorageInterface):
                     date_conditions.append("m.timestamp <= ?")
                     params.append(format_datetime(end_date))
 
-                # Combine conditions
-            where_clause = f"({' OR '.join(query_conditions)})"
             if date_conditions:
-                where_clause += f" AND ({' AND '.join(date_conditions)})"
+                where_clause = f"({where_clause}) AND ({' AND '.join(date_conditions)})"
 
             command_str = f"""
                 SELECT DISTINCT
@@ -319,12 +315,8 @@ class SQLiteChatStorage(StorageInterface):
                 GROUP BY s.session_id
                 ORDER BY MAX(m.timestamp) DESC NULLS LAST
                 """
-            logger.info(f"Executing SQL command: {command_str} with params {params}")
-            cursor = conn.execute(
-                command_str,
-                params,
-            )
 
+            cursor = conn.execute(command_str, params)
             return [self._deserialize_session(row) for row in cursor.fetchall()]
 
     def get_active_sessions_by_date_range(

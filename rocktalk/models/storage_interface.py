@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
+from enum import StrEnum
 from typing import List, Optional, Tuple
 
 from models.interfaces import (
@@ -9,6 +10,11 @@ from models.interfaces import (
     LLMConfig,
     LLMParameters,
 )
+
+
+class SearchOperator(StrEnum):
+    AND = "AND"
+    OR = "OR"
 
 
 class StorageInterface(ABC):
@@ -27,7 +33,8 @@ class StorageInterface(ABC):
     @abstractmethod
     def search_sessions(
         self,
-        query: str,
+        query: List[str],  # Changed from str to List[str]
+        operator: SearchOperator = SearchOperator.AND,  # Added operator
         search_titles: bool = True,
         search_content: bool = True,
         date_range: Optional[Tuple[datetime, datetime]] = None,
@@ -36,11 +43,13 @@ class StorageInterface(ABC):
         Search sessions with advanced filtering
 
         Args:
-            query: Search query (supports SQL LIKE wildcards)
+            query: List of search terms
+            operator: SearchOperator.AND or SearchOperator.OR to combine terms
             search_titles: Whether to search session titles
             search_content: Whether to search message content
             date_range: Optional tuple of (start_date, end_date) to filter by
         """
+        ...
 
     @abstractmethod
     def get_active_sessions_by_date_range(

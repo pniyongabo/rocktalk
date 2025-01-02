@@ -113,6 +113,7 @@ class SettingsManager:
         st.rerun()
 
     def rerun_dialog(self):
+        logger.info(f"Rerunning {self}")
         st.rerun(scope="fragment")
 
     def initialize_temp_config(self):
@@ -255,7 +256,6 @@ class SettingsManager:
 
         if self.session_actions.is_active(SettingsActions.export_session):
             self._export_session()
-            # self.session_actions.rerun()
 
         if current_template and self.session_actions.is_active(
             SettingsActions.set_default
@@ -281,6 +281,7 @@ class SettingsManager:
             copy_messages = st.checkbox("Copy all messages", value=True)
             copy_settings = st.checkbox("Copy settings", value=True)
 
+            success = False
             col1, col2 = st.columns(2)
             with col1:
                 if st.form_submit_button(
@@ -294,6 +295,7 @@ class SettingsManager:
                             else (self.storage.get_default_template().config)
                         ),
                     )
+
                     self.storage.store_session(new_session)
 
                     if copy_messages:
@@ -301,13 +303,16 @@ class SettingsManager:
                         for msg in messages:
                             msg.session_id = new_session.session_id
                             self.storage.save_message(msg)
+                    success = True
 
-                    st.success("Session copied successfully!")
-                    time.sleep(PAUSE_BEFORE_RELOADING)
-                    self.rerun_app()
             with col2:
                 if st.form_submit_button("Cancel", use_container_width=True):
                     self.session_actions.rerun()
+
+            if success:
+                st.success("Session copied successfully!")
+                time.sleep(PAUSE_BEFORE_RELOADING)
+                self.rerun_app()
 
     def _reset_settings(self):
         """Reset session settings to default template"""
@@ -352,13 +357,13 @@ class SettingsManager:
     def render_session_settings(self):
         """Session configuration UI"""
         assert self.session, "Session not initialized"
+
         # Session info
         col1, col2 = st.columns((0.9, 0.1))
         with col1:
             self.session.title = st.text_input(
                 "Session Title", self.session.title, key="session_title_input"
             )
-            logger.info(f"Session title: {self.session.title}")
         with col2:
             st.markdown("####")
             if st.button(":material/refresh:"):
@@ -399,13 +404,13 @@ class SettingsManager:
                         self.session.session_id, st.session_state.new_title
                     )
                     st.session_state.refresh_title_action = False
-                    del st.session_state.new_title
+                    del st.session_state["new_title"]
                     success = True
 
             with col2:
                 if st.form_submit_button("Cancel", use_container_width=True):
                     st.session_state.refresh_title_action = False
-                    del st.session_state.new_title
+                    del st.session_state["new_title"]
                     self.rerun_dialog()
 
             if success:
@@ -421,12 +426,16 @@ class SettingsManager:
             "session": self.session.model_dump(),
             "messages": [msg.model_dump() for msg in messages],
         }
-        st.download_button(
+        if st.download_button(
             "Download Session Export",
             data=str(export_data),
             file_name=f"session_{self.session.session_id}.json",
             mime="application/json",
-        )
+            use_container_width=True,
+        ):
+            st.success("Session exported successfully")
+            time.sleep(PAUSE_BEFORE_RELOADING)
+            self.session_actions.rerun()
 
     def render_session_delete_form(self):
         """Render delete session form"""
