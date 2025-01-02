@@ -148,7 +148,7 @@ class ChatInterface:
                     default=st.session_state.user_input_default,
                 )
                 if chat_prompt_return:
-                    logger.info(f"Received user input:\n{chat_prompt_return}")
+                    logger.info(f"Received user text input:\n{chat_prompt_return.text}")
         focus_prompt(prompt_container_key)
         st.session_state.user_input_default = None
 
