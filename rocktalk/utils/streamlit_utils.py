@@ -111,6 +111,19 @@ def on_pills_change(**kwargs: Unpack[OnPillsChange]):
         options_map[val]["callback"]()
 
 
+def escape_dollarsign(raw_string: str) -> str:
+    """
+    Escape dollar signs in a string to prevent LaTeX rendering in markdown.
+
+    Args:
+        raw_string (str): The input string.
+
+    Returns:
+        str: The string with dollar signs escaped.
+    """
+    return raw_string.replace("$", "\$")
+
+
 def close_dialog() -> None:
     components.html(
         """\

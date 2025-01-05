@@ -12,6 +12,7 @@ from utils.log import logger
 from langchain.schema import BaseMessage, HumanMessage
 from langchain_core.messages import AIMessage
 from datetime import datetime
+from utils.streamlit_utils import escape_dollarsign
 
 
 class LLMInterface(ABC):
@@ -101,7 +102,7 @@ class LLMInterface(ABC):
         title_content: str | list[str | dict] = title_response.content
 
         if isinstance(title_content, str):
-            title: str = title_content.strip('" \n').strip()
+            title: str = escape_dollarsign(title_content.strip('" \n').strip())
         else:
             logger.warning(f"Unexpected generated title response: {title_content}")
             return f"Chat {datetime.now()}"

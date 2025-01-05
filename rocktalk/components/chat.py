@@ -17,6 +17,7 @@ from utils.js import (
     scroll_to_bottom_streaming,
 )
 from utils.log import logger
+from utils.streamlit_utils import escape_dollarsign
 
 
 class ChatInterface:
@@ -222,7 +223,9 @@ class ChatInterface:
                             if isinstance(item, dict) and "text" in item:
                                 text = item["text"]
                                 full_response += text
-                            message_placeholder.markdown(full_response + "▌")
+                            message_placeholder.markdown(
+                                escape_dollarsign(full_response + "▌")
+                            )
 
                         # Track metadata
                         if chunk.response_metadata:
@@ -261,7 +264,7 @@ class ChatInterface:
                         )
                         st.rerun()
 
-                    message_placeholder.markdown(full_response)
+                    message_placeholder.markdown(escape_dollarsign(full_response))
                     logger.debug(f"LLM response: {full_response}\n{metadata}")
 
                     # Create ChatMessage

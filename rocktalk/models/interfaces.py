@@ -19,6 +19,7 @@ from utils.streamlit_utils import (
     PillOptions,
     close_dialog,
     on_pills_change,
+    escape_dollarsign,
 )
 
 
@@ -182,7 +183,7 @@ class ChatMessage(BaseModel):
                             text_list.append(str(item))
                     text = "".join(text_list)
                 if text:
-                    st.markdown(text)
+                    st.markdown(escape_dollarsign(text))
 
             message_button_container_key = f"message_button_container_{id(self)}"
             message_button_container = st.container(
