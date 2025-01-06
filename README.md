@@ -189,7 +189,7 @@ Note: Make sure you have the necessary permissions and budget and access to Amaz
 ### Keyboard Shortcuts
 
 - ⌘/⊞ + ⌫ : Stop streaming response
-- ⌫ : Send message
+- Enter : Send message
 - ⌘/⊞ + Enter : Add new line
 
 ## Troubleshooting (TBD)
