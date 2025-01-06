@@ -138,17 +138,18 @@ To set up and run RockTalk locally, follow these steps:
 
 6. Configure AWS credentials:
    - Set up your AWS credentials for accessing Amazon Bedrock. You can do this by configuring the AWS CLI or setting environment variables.
-7. Set up environment variables:
-   - Create a `.env` file in the project root directory.
-   - Add necessary environment variables (e.g., AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION).
-8. Run the application:
+   1. Will attempt to use default profile from your ~/.aws/config or ~/.aws/credentials
+   2. Can override by setting up environment variables:
+      - Create a `.env` file in the project root directory.
+      - Add necessary environment variables (e.g., AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION).
+7. Run the application:
    - Start the Streamlit app by running:
 
      ```sh
      streamlit run app.py
      ```
 
-9. Access the webapp:
+8. Access the webapp:
    - Open your web browser and navigate to `http://localhost:8501` to interact with RockTalk.
 
 Note: Make sure you have the necessary permissions and budget and access to Amazon Bedrock before running the application.
