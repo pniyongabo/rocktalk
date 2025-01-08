@@ -2,13 +2,17 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from enum import StrEnum
 from typing import List, Optional, Tuple
-
 from models.interfaces import (
     ChatMessage,
     ChatSession,
     ChatTemplate,
     LLMConfig,
     LLMParameters,
+)
+import os
+
+ROCKTALK_DEFAULT_MODEL = os.getenv(
+    "ROCKTALK_DEFAULT_MODEL", "anthropic.claude-3-5-sonnet-20241022-v2:0"
 )
 
 
@@ -141,7 +145,7 @@ class StorageInterface(ABC):
                 name="Balanced",
                 description="Balanced between creativity and consistency",
                 config=LLMConfig(
-                    bedrock_model_id="anthropic.claude-3-5-sonnet-20241022-v2:0",
+                    bedrock_model_id=ROCKTALK_DEFAULT_MODEL,
                     parameters=LLMParameters(temperature=0.5),
                 ),
             ),
@@ -149,7 +153,7 @@ class StorageInterface(ABC):
                 name="Deterministic",
                 description="Precise and consistent responses",
                 config=LLMConfig(
-                    bedrock_model_id="anthropic.claude-3-5-sonnet-20241022-v2:0",
+                    bedrock_model_id=ROCKTALK_DEFAULT_MODEL,
                     parameters=LLMParameters(temperature=0.0),
                 ),
             ),
@@ -157,7 +161,7 @@ class StorageInterface(ABC):
                 name="Creative",
                 description="More varied and creative responses",
                 config=LLMConfig(
-                    bedrock_model_id="anthropic.claude-3-5-sonnet-20241022-v2:0",
+                    bedrock_model_id=ROCKTALK_DEFAULT_MODEL,
                     parameters=LLMParameters(temperature=0.9),
                 ),
             ),

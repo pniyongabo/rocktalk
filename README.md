@@ -23,6 +23,19 @@ This project implements RockTalk, a ChatGPT-like chatbot webapp using Streamlit 
 - Logic/Integration: LangChain
 - Storage: SQLite
 
+## Storage
+
+The storage interface is designed to be extensible for future additional storage options. The storage engine interface:
+
+- Stores all chat sessions, messages, and templates
+- Supports full-text search and complex queries
+
+That said, SQLite is currently the only supported storage implementation. By default:
+
+- Chat database is stored in `chat_database.db` in the project root directory. This file is auto-generated with preset templates and necessary tables to meet the interface requirements. The database file can be deleted it at any time and it will be regenerated.
+- The database contents can be modified manually using any SQLite editing tool (e.g. SQLite3 Editor extension in VS Code). This can be useful for debugging application issues or just to see how your data is stored.
+- *Security Note: While file permissions restrict access to the current user (read/write only), the database file itself is not encrypted. Exercise caution with sensitive information as the contents remain readable if the file is accessed.*
+
 ## Chat Templates
 
 RockTalk implements a flexible template system that allows users to save and reuse chat configurations. Templates include:
@@ -148,22 +161,24 @@ To set up and run RockTalk locally, follow these steps:
         ```
 
 5. Configure AWS credentials:
-   - Set up your AWS credentials for accessing Amazon Bedrock. You can do this by configuring the AWS CLI or setting environment variables.
-   1. Will attempt to use default profile from your ~/.aws/config or ~/.aws/credentials
+   - This application uses AWS SDK for Python (Boto3). For more information about setting up credentials, check <https://boto3.amazonaws.com/v1/documentation/api/latest/index.html>. In short, you can configure your AWS credentials using the AWS CLI or setting environment variables.
+   1. RockTalk will attempt to use default profile defined in `~/.aws/config` or `~/.aws/credentials`
    2. Can override by setting up environment variables:
       - Create a `.env` file in the project root directory.
       - Add necessary environment variables (e.g., AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION).
-6. Run the application:
-   - Start the Streamlit app by running:
+
+6. Configure Bedrock Foundation Model access (if needed):
+   - Make sure you have the necessary permissions and budget and access to Amazon Bedrock before running the application. You'll need to enable [Model Access](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html) in the AWS console for your default region (set up in your credentials/config above). By default, RockTalk tries to use `anthropic.claude-3-5-sonnet-20241022-v2:0`. This can be adjusted by modifying `ROCKTALK_DEFAULT_MODEL` in your environment (setting environment variable or adding to `.env` in the project root directory). *Note that `ROCKTALK_DEFAULT_MODEL` is only used when first initializing your preset chat templates. Once they are initialized, adjusting the default model will have no effect.*
+
+7. Run the application:
+   - Start the Streamlit app by running from the project root directory (main repository path you cloned above):
 
      ```sh
      streamlit run rocktalk/app.py
      ```
 
-7. Access the webapp:
-   - Open your web browser and navigate to `http://localhost:8501` to interact with RockTalk.
-
-Note: Make sure you have the necessary permissions and budget and access to Amazon Bedrock before running the application.
+8. Access the webapp:
+   - If it didn't open automatically, open your web browser and navigate to `http://localhost:8501` to interact with RockTalk.
 
 ## Usage
 

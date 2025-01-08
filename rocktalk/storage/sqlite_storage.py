@@ -32,6 +32,17 @@ class SQLiteChatStorage(StorageInterface):
 
     def init_db(self) -> None:
         """Initialize database schema"""
+        # Set restrictive permissions on the database file if it doesn't exist
+        db_file = Path(self.db_path)
+        if not db_file.exists():
+            # Create empty file with restrictive permissions
+            db_file.touch(
+                mode=0o600
+            )  # Read/write for owner only (equivalent to chmod 600)
+        else:
+            # Update permissions on existing file
+            db_file.chmod(0o600)
+
         with self.get_connection() as conn:
             conn.executescript(
                 """

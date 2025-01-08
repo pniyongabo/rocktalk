@@ -9,6 +9,10 @@ from storage.sqlite_storage import SQLiteChatStorage
 from streamlit.commands.page_config import Layout
 from streamlit_float import float_init
 from streamlit_theme import st_theme
+import dotenv
+
+# Load environment variables
+dotenv.load_dotenv()
 
 
 class AppConfig(BaseModel):

@@ -1,12 +1,8 @@
 from enum import StrEnum
 from functools import partial
-import hmac
-import os
 import time
 from datetime import datetime
 from typing import Any, Callable, List, Optional, Tuple
-from streamlit.delta_generator import DeltaGenerator
-import dotenv
 import streamlit as st
 from models.interfaces import (
     ChatExport,
@@ -23,9 +19,6 @@ from services.creds import get_cached_aws_credentials
 from models.interfaces import ChatMessage
 from .button_group import ButtonGroupManager
 from .parameter_controls import ParameterControls
-
-# Load environment variables
-dotenv.load_dotenv()
 
 # Check for deployment environment
 PAUSE_BEFORE_RELOADING = 2  # seconds
