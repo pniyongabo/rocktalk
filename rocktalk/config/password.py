@@ -4,7 +4,7 @@ from typing import Optional
 
 import streamlit as st
 
-DEPLOYED = os.getenv("DEPLOYED", "true").lower() == "true"
+DEPLOYED = os.getenv("DEPLOYED", "false").lower() == "true"
 
 
 def get_password() -> Optional[str]:

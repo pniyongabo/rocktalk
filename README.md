@@ -129,16 +129,23 @@ To set up and run RockTalk locally, follow these steps:
    - To disable Streamlit's usage statistics collection, create or edit the Streamlit configuration file:
      - On Linux/macOS: `~/.streamlit/config.toml`
      - On Windows: `%UserProfile%\.streamlit\config.toml`
-   - Add the following line to the file:
+     - Add the following line to the file:
 
-     ```shell
-     mkdir -p ~/.streamlit
+        ```toml
+        [browser]
+        gatherUsageStats = false
+        ```
 
-     cat << 'EOF' > ~/.streamlit/config.toml
-      [browser]
-      gatherUsageStats = false
-      EOF
-     ```
+     - Or just run this in your shell (Linux/macOS)
+
+        ```shell
+        mkdir -p ~/.streamlit
+
+        cat << 'EOF' > ~/.streamlit/config.toml
+        [browser]
+        gatherUsageStats = false
+        EOF
+        ```
 
 5. Configure AWS credentials:
    - Set up your AWS credentials for accessing Amazon Bedrock. You can do this by configuring the AWS CLI or setting environment variables.
