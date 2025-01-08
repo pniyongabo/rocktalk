@@ -3,7 +3,6 @@ from functools import partial
 import streamlit as st
 from config.settings import SettingsManager
 from models.storage_interface import StorageInterface
-from rocktalk.models.interfaces import ChatSession
 from utils.date_utils import create_date_masks
 from utils.streamlit_utils import OnPillsChange, PillOptions, on_pills_change
 from functools import partial
@@ -11,7 +10,6 @@ from .chat import ChatInterface
 from .dialogs.general_options import general_options
 from .dialogs.session_settings import session_settings
 from .dialogs.search import search_dialog, SearchInterface
-import pandas as pd
 
 
 class Sidebar:

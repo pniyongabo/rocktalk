@@ -119,37 +119,41 @@ RockTalk implements a flexible template system that allows users to save and reu
 To set up and run RockTalk locally, follow these steps:
 
 1. Clone the repository
+   - `git clone https://github.com/tahouse/rocktalk.git && cd rocktalk`
 2. (Optional) Create python environment
-   - `conda create -n rock 'python<3.11'
+   - `conda create -n rock 'python=3.11'`
+   - `conda activate rock`
 3. Install python requirements
    - `pip install -r requirements.txt`
 4. (Optional) Disable Streamlit telemetry:
-   - To disable Streamlit's usage statistics collection, run the following command:
-5. (Optional) Disable Streamlit telemetry:
    - To disable Streamlit's usage statistics collection, create or edit the Streamlit configuration file:
      - On Linux/macOS: `~/.streamlit/config.toml`
      - On Windows: `%UserProfile%\.streamlit\config.toml`
    - Add the following line to the file:
 
-     ```toml
-     [browser]
-     gatherUsageStats = false
+     ```shell
+     mkdir -p ~/.streamlit
+
+     cat << 'EOF' > ~/.streamlit/config.toml
+      [browser]
+      gatherUsageStats = false
+      EOF
      ```
 
-6. Configure AWS credentials:
+5. Configure AWS credentials:
    - Set up your AWS credentials for accessing Amazon Bedrock. You can do this by configuring the AWS CLI or setting environment variables.
    1. Will attempt to use default profile from your ~/.aws/config or ~/.aws/credentials
    2. Can override by setting up environment variables:
       - Create a `.env` file in the project root directory.
       - Add necessary environment variables (e.g., AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION).
-7. Run the application:
+6. Run the application:
    - Start the Streamlit app by running:
 
      ```sh
-     streamlit run app.py
+     streamlit run rocktalk/app.py
      ```
 
-8. Access the webapp:
+7. Access the webapp:
    - Open your web browser and navigate to `http://localhost:8501` to interact with RockTalk.
 
 Note: Make sure you have the necessary permissions and budget and access to Amazon Bedrock before running the application.
