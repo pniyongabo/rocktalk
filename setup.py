@@ -10,7 +10,7 @@ with open(Path(BASE_DIR, "requirements.txt")) as file:
 setup(
     name="rocktalk",
     version="0.1",
-    python_requires=">=3.10",
+    python_requires=">=3.11",
     packages=find_packages(),
     install_requires=required_packages,
 )
