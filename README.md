@@ -110,7 +110,7 @@ RockTalk implements a flexible template system that allows users to save and reu
 
 ## Requirements
 
-- Python 3.8-3.12
+- Python >=3.11 (only 3.11 tested, but >3.11 expected to work as well)
 - AWS Account with Bedrock model access
 - Supported models: Claude, Titan, etc.
 

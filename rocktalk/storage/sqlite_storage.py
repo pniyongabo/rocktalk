@@ -459,17 +459,32 @@ class SQLiteChatStorage(StorageInterface):
 
     def initialize_preset_templates(self) -> None:
         """Initialize default preset templates if they don't exist"""
-        presets = super().get_preset_templates()
-
         with self.get_connection() as conn:
-            for template in presets:
-                # Check if preset already exists
-                cursor = conn.execute(
-                    "SELECT 1 FROM templates WHERE name = ?",
-                    (template.name,),
-                )
-                if not cursor.fetchone():
+            # Check if any templates exist
+            cursor = conn.execute("SELECT COUNT(*) as count FROM templates")
+            templates_count = cursor.fetchone()["count"]
+
+            # Check if a default template exists
+            cursor = conn.execute(
+                "SELECT COUNT(*) as count FROM templates WHERE is_default = 1"
+            )
+            default_count = cursor.fetchone()["count"]
+
+            if templates_count == 0:
+                # No templates exist, initialize presets
+                presets = super().get_preset_templates()
+                for template in presets:
                     self.store_chat_template(template)
+                # Set first preset as default
+                self.set_default_template(presets[0].template_id)
+            elif default_count == 0:
+                # Templates exist but no default set, set first template as default
+                cursor = conn.execute(
+                    "SELECT template_id FROM templates ORDER BY name LIMIT 1"
+                )
+                first_template = cursor.fetchone()
+                if first_template:
+                    self.set_default_template(first_template["template_id"])
 
     def get_chat_template_by_id(self, template_id: str) -> ChatTemplate:
         """Get a specific chat template by id"""
