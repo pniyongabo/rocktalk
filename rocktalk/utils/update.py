@@ -3,9 +3,122 @@ import time
 import streamlit as st
 import html
 from typing import Optional, List
+from enum import StrEnum
 from .log import logger
+import os
+import sys
 
 PAUSE_BEFORE_RELOADING = 2
+
+# Add to top of update.py
+from config.button_group import ButtonGroupManager
+
+
+class UpdateActions(StrEnum):
+    check_updates = "check_updates_action"
+    apply_update = "apply_update_action"
+    cancel_update = "cancel_update_action"
+
+
+class UpdateManager:
+    """Manages the update process UI and state"""
+
+    update_actions = ButtonGroupManager(
+        "update_actions",
+        [
+            UpdateActions.check_updates,
+            UpdateActions.apply_update,
+            UpdateActions.cancel_update,
+        ],
+    )
+
+    def __init__(self):
+        if "update_available" not in st.session_state:
+            st.session_state.update_available = False
+        if "update_error" not in st.session_state:
+            st.session_state.update_error = None
+
+    def render(self):
+        """Render the update interface"""
+        # Only validate git environment when user clicks check
+        if self.update_actions.is_active(UpdateActions.check_updates):
+            if not validate_git_environment():
+                st.error("Git environment is not properly configured")
+                return
+
+            try:
+                if fetch_updates():
+                    st.session_state.update_available = check_update_status()
+                self.render_update_form()
+            except Exception as e:
+                st.session_state.update_error = str(e)
+                logger.exception("Error checking for updates")
+                self.render_update_form()
+        else:
+            # Just show the initial button
+            if st.button("Check for Updates"):
+                self.update_actions.toggle_action(UpdateActions.check_updates)
+                st.rerun(scope="fragment")
+
+    def render_update_form(self):
+        """Render the update confirmation form"""
+        with st.form(
+            "update_form", clear_on_submit=False
+        ):  # Prevent form from clearing
+            if st.session_state.update_error:
+                st.error(f"Error checking for updates: {st.session_state.update_error}")
+
+            elif st.session_state.update_available:
+                st.info("A new version is available")
+
+                # Show available changes if any
+                if changes := get_remote_changes():
+                    st.markdown("#### Available updates:")
+                    st.text(changes)
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.form_submit_button(
+                        "Update Now", type="primary", use_container_width=True
+                    ):
+                        try:
+                            if pull_updates():
+                                # Check if dependencies need updating
+                                if update_dependencies():
+                                    st.info("Dependencies updated successfully")
+
+                                st.success("Update successful. Restarting app...")
+                                time.sleep(PAUSE_BEFORE_RELOADING)
+
+                                # Restart the Streamlit app
+                                python = sys.executable
+                                os.execl(python, python, *sys.argv)
+                            else:
+                                st.error("Update failed")
+                        except Exception as e:
+                            st.error(f"Error during update: {str(e)}")
+                            logger.exception("Error during update")
+
+                with col2:
+                    if st.form_submit_button("Cancel", use_container_width=True):
+                        self.reset_state()
+                        self.update_actions.rerun()
+            else:
+                st.success("App is up to date")
+                if st.form_submit_button("Close", use_container_width=True):
+                    self.reset_state()
+                    self.update_actions.rerun()
+
+    def reset_state(self):
+        """Reset all update-related state"""
+        st.session_state.update_available = False
+        st.session_state.update_error = None
+        self.update_actions.clear_all()
+
+
+def check_for_updates():
+    """Initialize and render the update manager"""
+    UpdateManager().render()
 
 
 def run_git_command(
@@ -36,6 +149,7 @@ def run_git_command(
             check=check,
             timeout=timeout,
         )
+        logger.info(result)
         return result.stdout.strip() if result.stdout else ""
     except subprocess.CalledProcessError as e:
         logger.error(f"Git command failed: {command}")
@@ -134,121 +248,51 @@ def update_dependencies() -> bool:
         return False
 
 
-def check_for_updates(branch: str = "main"):
+def fetch_updates() -> bool:
     """
-    Check for and potentially apply updates to the application
+    Fetch updates from remote repository
 
-    Args:
-        branch (str): Branch to check for updates
+    Returns:
+        bool: True if fetch was successful
     """
-    # Validate git environment first
-    if not validate_git_environment():
-        return
-
     try:
-        # Fetch the latest changes from the remote repository
-        logger.info("Checking for updates: Fetching latest changes")
-        try:
-            fetch_output = run_git_command(["git", "fetch"], timeout=10)
-            if fetch_output:
-                logger.debug(f"Fetch output: {fetch_output}")
-        except subprocess.CalledProcessError as e:
-            logger.warning(f"Fetch errors: {e.stderr}")
-
-        # Check if there are any changes
-        logger.info(f"Checking current git status for branch: {branch}")
-        try:
-            status_output = run_git_command(
-                ["git", "status", "-uno", f"HEAD..origin/{branch}"]
-            )
-        except subprocess.CalledProcessError:
-            st.error(f"Failed to check status for branch: {branch}")
-            return
-
-        if "Your branch is behind" in status_output:
-            logger.info("Update available: Branch is behind remote")
-
-            # Retrieve and display changes
-            commits_diff = get_remote_changes(branch)
-
-            try:
-                code_diff = run_git_command(["git", "diff", "HEAD..origin/main"])
-            except subprocess.CalledProcessError:
-                code_diff = None
-
-            # Create a container for update information
-            with st.container():
-                st.subheader("Update Available")
-
-                # Display commits if available
-                if commits_diff:
-                    st.subheader("Pending Commits:")
-                    for commit in commits_diff.split("\n"):
-                        st.text(sanitize_git_output(commit))
-
-                # Display code changes if available
-                if code_diff:
-                    st.subheader("Code Changes:")
-                    st.code(sanitize_git_output(code_diff), language="diff")
-
-                # Confirmation for update with more explicit UI
-                update_confirmed = st.checkbox(
-                    "I understand and want to update the application"
-                )
-
-                if update_confirmed:
-                    update_button = st.button("Confirm Update", type="primary")
-
-                    if update_button:
-                        try:
-                            logger.info("Initiating update process")
-
-                            # Pull the latest changes
-                            pull_result = run_git_command(
-                                ["git", "pull"], capture_output=True, check=False
-                            )
-
-                            # Log and display pull result
-                            if pull_result:
-                                logger.info(f"Pull output: {pull_result}")
-                                st.text(f"Pull details: {pull_result}")
-
-                            # Check for dependency updates
-                            dependencies_updated = update_dependencies()
-                            if dependencies_updated:
-                                st.success("Dependencies updated successfully")
-
-                            # Verify update status
-                            pull_status = run_git_command(
-                                ["git", "status", "-uno"],
-                                capture_output=True,
-                                check=False,
-                            )
-
-                            if "Your branch is up to date" in pull_status:
-                                logger.info("Update successful")
-
-                                # Explicit rerun confirmation
-                                rerun_confirmed = st.button("Restart Application")
-                                if rerun_confirmed:
-                                    st.success("Restarting app...")
-                                    time.sleep(PAUSE_BEFORE_RELOADING)
-                                    st.rerun()
-                            else:
-                                logger.error("Update may have failed")
-                                st.error(
-                                    "Update may have failed. Please check manually."
-                                )
-
-                        except Exception as pull_error:
-                            logger.exception(
-                                f"Unexpected error during update: {pull_error}"
-                            )
-                            st.error(f"Update failed: {str(pull_error)}")
-        else:
-            logger.info("App is up to date")
-            st.info("App is up to date")
-
+        output = run_git_command(["git", "fetch"], timeout=10)
+        if output:
+            logger.info(f"Fetch output: {output}")
+        return True
     except Exception as e:
-        logger.exception(f"Unexpected error in update check: {e}")
-        st.error(f"Error checking for updates: {str(e)}")
+        logger.exception("Error fetching updates")
+        return False
+
+
+def check_update_status() -> bool:
+    """
+    Check if local branch is behind remote
+
+    Returns:
+        bool: True if updates are available
+    """
+    try:
+        status_output = run_git_command(["git", "status", "-uno"])
+        return "Your branch is behind" in status_output
+    except Exception as e:
+        logger.exception("Error checking update status")
+        raise
+
+
+def pull_updates() -> bool:
+    """
+    Pull latest changes from remote
+
+    Returns:
+        bool: True if pull was successful
+    """
+    try:
+        output = run_git_command(["git", "pull"], timeout=30)
+        if output:
+            logger.info(f"Pull output: {output}")
+        return True
+    except Exception as e:
+        st.error(f"Update failed: {e}")
+        logger.exception("Error pulling updates")
+        raise e

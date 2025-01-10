@@ -48,7 +48,6 @@ class SettingsManager:
         SettingsActions.delete_session: None,
         "new_title": None,
         "confirm_reset": None,
-        "confirm_delete_session": None,
         "confirm_delete_template": None,
         "temp_template_name": None,
         "temp_template_description": None,
