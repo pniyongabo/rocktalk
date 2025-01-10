@@ -3,6 +3,7 @@ from functools import partial
 import streamlit as st
 from config.settings import SettingsManager
 from models.storage_interface import StorageInterface
+from utils.update import UpdateManager
 from utils.date_utils import create_date_masks
 from utils.streamlit_utils import OnPillsChange, PillOptions, on_pills_change
 from functools import partial
@@ -199,6 +200,7 @@ class Sidebar:
     def open_global_settings(self):
         """Open global settings dialog"""
         SettingsManager(storage=self.storage).clear_cached_settings_vars()
+        UpdateManager().reset_state()
         general_options()
 
     def open_session_settings(self, session_id: str):
