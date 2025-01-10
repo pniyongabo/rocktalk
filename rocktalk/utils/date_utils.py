@@ -16,7 +16,7 @@ def create_date_masks(
     - Today (MM/DD/YYYY)
     - Yesterday (MM/DD/YYYY)
     - This Week (MM/DD - MM/DD/YYYY)
-    - This Month (Month YYYY)
+    - Earlier This Month (Month YYYY)
     - Previous months (Month YYYY)
     - Over a year ago
     """
@@ -72,7 +72,7 @@ def create_date_masks(
         & ~already_grouped
     )
     if month_mask.any():
-        month_label = f"This Month ({month_start.strftime('%B %Y')})"
+        month_label = f"Earlier This Month ({month_start.strftime('%b %Y')})"
         masks.append((month_label, month_mask))
         already_grouped |= month_mask
 
@@ -80,7 +80,7 @@ def create_date_masks(
     for i in range(1, 12):
         period_end = month_start - pd.DateOffset(months=i - 1)
         period_start = month_start - pd.DateOffset(months=i)
-        month_label = period_start.strftime("%B %Y")
+        month_label = period_start.strftime("%b %Y")
 
         month_mask = (
             (df_sessions["last_active"] >= period_start)
