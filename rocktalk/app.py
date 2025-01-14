@@ -63,6 +63,9 @@ st.markdown(
             //height: 0 !important;
             display: none;
         }
+        div[data-testid="InputInstructions"] > span:nth-child(1) {
+            visibility: hidden;
+        }
     </style>
     """,
     unsafe_allow_html=True,
