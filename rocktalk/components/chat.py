@@ -18,6 +18,7 @@ from utils.js import (
 )
 from utils.log import logger
 from utils.streamlit_utils import escape_dollarsign
+import time
 
 
 class ChatInterface:
@@ -197,54 +198,73 @@ class ChatInterface:
                     latency = None
                     stop_reason = None
                     message_placeholder = st.empty()
-
-                    with self.prompt_placeholder:
-                        # add a stop stream button
-                        stop_stream_button_key = "stop_stream_button"
-                        with st.container():
-                            button(
-                                label="Stop (⌘/⊞ + ⌫)",
-                                shortcut="Meta+backspace",
-                                help="Stop the current stream (⌘/⊞ + ⌫)",
-                                icon="🛑",
-                                on_click=self._stop_chat_stream,
-                                use_container_width=True,
-                            )
-                    full_response: str = ""
-                    scroll_to_bottom_streaming(
-                        # selector=f".st-key-{stop_stream_button_key}"
-                    )
-                    for chunk in self.llm.stream(input=llm_messages):
-                        chunk = cast(AIMessage, chunk)
-                        if st.session_state.stop_chat_stream:
-                            logger.info("Interrupting stream")
-                            break
-                        for item in chunk.content:
-                            if isinstance(item, dict) and "text" in item:
-                                text = item["text"]
-                                full_response += text
-                            message_placeholder.markdown(
-                                escape_dollarsign(full_response + "▌")
-                            )
-
-                        # Track metadata
-                        if chunk.response_metadata:
-                            if "stopReason" in chunk.response_metadata:
-                                stop_reason = chunk.response_metadata["stopReason"]
-                            if "metrics" in chunk.response_metadata:
-                                latency = chunk.response_metadata["metrics"].get(
-                                    "latencyMs"
+                    try:
+                        with self.prompt_placeholder:
+                            # add a stop stream button
+                            stop_stream_button_key = "stop_stream_button"
+                            with st.container():
+                                button(
+                                    label="Stop (⌘/⊞ + ⌫)",
+                                    shortcut="Meta+backspace",
+                                    help="Stop the current stream (⌘/⊞ + ⌫)",
+                                    icon="🛑",
+                                    on_click=self._stop_chat_stream,
+                                    use_container_width=True,
+                                    # key=stop_stream_button_key,
                                 )
-                        # Track usage data
-                        if hasattr(chunk, "usage_metadata") and chunk.usage_metadata:
-                            usage_data = chunk.usage_metadata
+                        full_response: str = ""
+                        scroll_to_bottom_streaming(
+                            # selector=f".st-key-{stop_stream_button_key}"
+                        )
+                        for chunk in self.llm.stream(input=llm_messages):
+                            chunk = cast(AIMessage, chunk)
+                            if st.session_state.stop_chat_stream:
+                                logger.info("Interrupting stream")
+                                break
+                            for item in chunk.content:
+                                if isinstance(item, dict) and "text" in item:
+                                    text = item["text"]
+                                    full_response += text
+                                message_placeholder.markdown(
+                                    escape_dollarsign(full_response + "▌")
+                                )
 
-                    metadata = {
-                        "usage_data": usage_data,
-                        "latency_ms": latency,
-                        "stop_reason": stop_reason,
-                    }
+                            # Track metadata
+                            if chunk.response_metadata:
+                                if "stopReason" in chunk.response_metadata:
+                                    stop_reason = chunk.response_metadata["stopReason"]
+                                if "metrics" in chunk.response_metadata:
+                                    latency = chunk.response_metadata["metrics"].get(
+                                        "latencyMs"
+                                    )
+                            # Track usage data
+                            if (
+                                hasattr(chunk, "usage_metadata")
+                                and chunk.usage_metadata
+                            ):
+                                usage_data = chunk.usage_metadata
 
+                        metadata = {
+                            "usage_data": usage_data,
+                            "latency_ms": latency,
+                            "stop_reason": stop_reason,
+                        }
+                    except Exception as e:
+                        logger.error(f"Error in LLM stream: {e}")
+                        metadata = {
+                            "usage_data": usage_data,
+                            "latency_ms": latency,
+                            "stop_reason": "error",
+                        }
+                        st.session_state.show_stop_stream = False
+                        message_placeholder.error(
+                            escape_dollarsign(f"Error in LLM stream:\n{e}")
+                        )
+                        sec = 15
+                        with st.spinner(f"Will reload in {sec} seconds.."):
+                            st.markdown("")
+                            time.sleep(sec)
+                            st.session_state.stop_chat_stream = True
                     if st.session_state.stop_chat_stream:
                         metadata["stop_reason"] = "interrupted"
                         logger.debug(f"LLM response: {metadata}")
