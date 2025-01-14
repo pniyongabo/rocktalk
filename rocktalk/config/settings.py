@@ -350,12 +350,20 @@ class SettingsManager:
         """Session configuration UI"""
         assert self.session, "Session not initialized"
 
+        title_text_input_key = "session_title_input"
+
         # Session info
         col1, col2 = st.columns((0.9, 0.1))
         with col1:
-            self.session.title = st.text_input(
-                "Session Title", self.session.title, key="session_title_input"
+            st.session_state.new_title = st.text_input(
+                "Session Title",
+                self.session.title,
+                key=title_text_input_key,
+                on_change=lambda: setattr(
+                    st.session_state, "refresh_title_action", True
+                ),
             )
+
         with col2:
             st.markdown("####")
             if st.button(":material/refresh:"):
@@ -366,7 +374,9 @@ class SettingsManager:
 
         # Show confirmation for new title
         if st.session_state.refresh_title_action:
-            self.render_session_title_update_form()
+            self.render_session_title_update_form(
+                title_text_input_key=title_text_input_key
+            )
 
         self.render_template_selector()
 
@@ -378,7 +388,7 @@ class SettingsManager:
         )
         controls.render_parameters(st.session_state.temp_llm_config)
 
-    def render_session_title_update_form(self):
+    def render_session_title_update_form(self, title_text_input_key: str):
         if not self.session:
             st.error(
                 "Session has not been defined, cannot regenerate title outside of session settings"
@@ -400,7 +410,14 @@ class SettingsManager:
                     success = True
 
             with col2:
-                if st.form_submit_button("Cancel", use_container_width=True):
+
+                def reset_title_value():
+                    assert self.session, "Session not initialized"
+                    st.session_state[title_text_input_key] = self.session.title
+
+                if st.form_submit_button(
+                    "Cancel", use_container_width=True, on_click=reset_title_value
+                ):
                     st.session_state.refresh_title_action = False
                     del st.session_state["new_title"]
                     self.rerun_dialog()
