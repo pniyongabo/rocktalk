@@ -553,7 +553,9 @@ class SettingsManager:
                 return template
         return None
 
-    def render_template_selector(self) -> Optional[ChatTemplate]:
+    def render_template_selector(
+        self, include_original: bool = True
+    ) -> Optional[ChatTemplate]:
         """Shared template selection UI"""
         current_config = st.session_state.temp_llm_config
         templates: List[ChatTemplate] = self.storage.get_chat_templates()
@@ -580,11 +582,12 @@ class SettingsManager:
             if current_selection in template_names
             else None
         )
-
-        with st.expander(
-            f"Original Template: {st.session_state.original_template}", expanded=False
-        ):
-            st.json(st.session_state.original_config.model_dump_json())
+        if include_original:
+            with st.expander(
+                f"Original Template: {st.session_state.original_template}",
+                expanded=False,
+            ):
+                st.json(st.session_state.original_config.model_dump_json())
 
         selected = st.selectbox(
             "Template to Apply",

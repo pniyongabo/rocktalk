@@ -11,6 +11,7 @@ from .chat import ChatInterface
 from .dialogs.general_options import general_options
 from .dialogs.session_settings import session_settings
 from .dialogs.search import search_dialog, SearchInterface
+from .dialogs.template_selector import template_selector_dialog
 
 
 class Sidebar:
@@ -39,14 +40,18 @@ class Sidebar:
         """Render New Chat and Settings buttons"""
         options_map: PillOptions = {
             0: {
-                "label": "\+ New Chat",  #:material/add:
+                "label": "\+ New Chat",
                 "callback": self.create_new_chat,
             },
             1: {
+                "label": ":material/playlist_add:",
+                "callback": self.open_template_selector,
+            },
+            2: {
                 "label": ":material/search:",
                 "callback": self.open_search_dialog,
             },
-            2: {
+            3: {
                 "label": ":material/settings:",
                 "callback": self.open_global_settings,
             },
@@ -59,6 +64,7 @@ class Sidebar:
             selection_mode="single",
             key="chat_sessions_header_buttons",
             on_change=on_pills_change,
+            help="Create a new Chat, create a new chat from a template, search for sessions, or general session settings",
             kwargs=dict(
                 OnPillsChange(
                     key="chat_sessions_header_buttons",
@@ -167,7 +173,7 @@ class Sidebar:
             """,
             unsafe_allow_html=True,
         )
-        self.apply_session_list_styles(container_key=header_key, width=151)
+        self.apply_session_list_styles(container_key=header_key, width=101)
 
     def apply_session_list_styles(self, container_key="session_list", width: int = 200):
         """Apply CSS styles to the session list"""
@@ -215,3 +221,8 @@ class Sidebar:
             storage=self.storage,
             chat_interface=self.chat_interface,
         )
+
+    def open_template_selector(self):
+        """Open quick template selector dialog"""
+        SettingsManager(storage=self.storage).clear_cached_settings_vars()
+        template_selector_dialog()
