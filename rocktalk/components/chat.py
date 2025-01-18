@@ -147,10 +147,12 @@ class ChatInterface:
                     placeholder="Hello!",
                     disabled=False,
                     max_image_size=5 * 1024 * 1024,
-                    default=st.session_state.user_input_default,
+                    default=st.session_state.user_input_default
+                    or st.session_state.stored_user_input,
                 )
                 if chat_prompt_return:
                     logger.info(f"Received user text input:\n{chat_prompt_return.text}")
+                    st.session_state.stored_user_input = chat_prompt_return
         focus_prompt(prompt_container_key)
         st.session_state.user_input_default = None
 
@@ -320,4 +322,5 @@ class ChatInterface:
 
                     # Update state for next human input
                     st.session_state.turn_state = TurnState.HUMAN_TURN
+                    st.session_state.stored_user_input = None
                     st.rerun()

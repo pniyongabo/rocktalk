@@ -53,6 +53,8 @@ if (
 if "next_run_callable" in st.session_state:
     st.session_state.next_run_callable()
     del st.session_state["next_run_callable"]
+if "stored_user_input" not in st.session_state:
+    st.session_state.stored_user_input = None
 
 st.markdown(
     """
