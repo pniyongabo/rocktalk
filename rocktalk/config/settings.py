@@ -20,6 +20,7 @@ from services.creds import get_cached_aws_credentials
 from models.interfaces import ChatMessage
 from .button_group import ButtonGroupManager
 from .parameter_controls import ParameterControls
+from utils.log import get_log_memoryhandler
 
 # Check for deployment environment
 PAUSE_BEFORE_RELOADING = 2  # seconds
@@ -367,9 +368,11 @@ class SettingsManager:
 
         with col2:
             st.markdown("####")
+            if "new_generated_title" not in st.session_state:
+                st.session_state.new_generated_title = None
             if st.button(":material/refresh:"):
                 st.session_state.refresh_title_action = True
-                st.session_state.new_title = self.llm.generate_session_title(
+                st.session_state.new_generated_title = self.llm.generate_session_title(
                     self.session
                 )
 
@@ -396,18 +399,22 @@ class SettingsManager:
             )
             return
         with st.form("confirm_title_change"):
-            st.info(f"New suggested title: {st.session_state.new_title}")
+            if st.session_state.new_generated_title:
+                new_title = st.session_state.new_generated_title
+            else:
+                new_title = st.session_state.new_title
+            st.info(f"New suggested title: {new_title}")
             col1, col2 = st.columns(2)
             success = None
             with col1:
                 if st.form_submit_button(
                     "Accept", type="primary", use_container_width=True
                 ):
-                    self.storage.rename_session(
-                        self.session.session_id, st.session_state.new_title
-                    )
+                    self.storage.rename_session(self.session.session_id, new_title)
                     st.session_state.refresh_title_action = False
                     del st.session_state["new_title"]
+                    del st.session_state["new_generated_title"]
+                    self.session.title = new_title
                     success = True
 
             with col2:
@@ -421,6 +428,7 @@ class SettingsManager:
                 ):
                     st.session_state.refresh_title_action = False
                     del st.session_state["new_title"]
+                    del st.session_state["new_generated_title"]
                     self.rerun_dialog()
 
             if success:
