@@ -10,7 +10,8 @@ from models.interfaces import (
     ChatTemplate,
     LLMConfig,
 )
-
+import logging
+import pandas as pd
 from models.storage_interface import StorageInterface
 from models.llm import LLMInterface
 from utils.log import logger
@@ -869,3 +870,71 @@ class SettingsManager:
                 else:
                     st.session_state.confirm_reset = True
                     st.warning("Click again to confirm reset")
+
+    def render_log_viewer(self, max_entries: int = 100, min_level: str = "DEBUG"):
+        """Render log viewer with filters"""
+        from utils.log import get_log_memoryhandler
+
+        st.subheader("Application Logs")
+
+        # Get log levels from logging module
+        log_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+
+        col1, col2 = st.columns(2)
+        with col1:
+            selected_level = st.selectbox(
+                "Minimum Log Level",
+                options=log_levels,
+                index=log_levels.index(min_level),
+            )
+
+        with col2:
+            max_entries = st.number_input(
+                "Maximum Entries", min_value=10, max_value=1000, value=max_entries
+            )
+
+        # Get logs from memory handler
+        handler = get_log_memoryhandler()
+        if not handler:
+            st.warning("No log handler configured")
+            return
+
+        # Filter and format logs
+        logs = []
+        for record in handler.buffer[-max_entries:]:
+            if record.levelno >= getattr(logging, selected_level):
+                timestamp = (
+                    record.asctime if hasattr(record, "asctime") else record.created
+                )
+                logs.append(
+                    {
+                        "time": timestamp,
+                        "level": record.levelname,
+                        "message": record.getMessage(),
+                        "module": record.module,
+                        "func": record.funcName,
+                    }
+                )
+
+        if not logs:
+            st.info("No logs matching selected criteria")
+            return
+
+        # Display logs in a dataframe
+        df = pd.DataFrame(logs)
+        st.dataframe(
+            df,
+            column_config={
+                "time": st.column_config.TextColumn("Time"),
+                "level": st.column_config.TextColumn("Level"),
+                "message": st.column_config.TextColumn("Message", width="large"),
+                "module": st.column_config.TextColumn("Module"),
+                "func": st.column_config.TextColumn("Function"),
+            },
+            hide_index=True,
+            use_container_width=True,
+        )
+
+        if st.button("Clear Logs"):
+            handler.buffer.clear()
+            st.rerun()

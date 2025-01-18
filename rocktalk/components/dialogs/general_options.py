@@ -10,8 +10,14 @@ def general_options():
     settings = SettingsManager(storage=storage)
     update_manager = UpdateManager()
 
-    tab1, tab2, tab3, tab4 = st.tabs(
-        ["Model Settings", "Import/Export", "Credentials", "Check for Updates"]
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(
+        [
+            "Model Settings",
+            "Import/Export",
+            "Credentials",
+            "Check for Updates",
+            "Log Viewer",
+        ]
     )
 
     with tab1:
@@ -22,3 +28,5 @@ def general_options():
         settings.render_refresh_credentials()
     with tab4:
         update_manager.render()
+    with tab5:
+        settings.render_log_viewer()

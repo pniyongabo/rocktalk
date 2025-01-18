@@ -1,4 +1,6 @@
+from logging.handlers import MemoryHandler
 import logging
+from typing import Optional
 
 
 def setup_logger():
@@ -21,7 +23,20 @@ def setup_logger():
         handler.setFormatter(logging.Formatter(format_string))
         logger.addHandler(handler)
 
+        # Add memory handler
+        memory_handler = MemoryHandler(capacity=1000, flushLevel=logging.ERROR)
+        memory_handler.setLevel(logging.DEBUG)
+        logger.addHandler(memory_handler)
+
     return logger
+
+
+def get_log_memoryhandler() -> Optional[MemoryHandler]:
+    """Get the memory handler for log viewing"""
+    for handler in logger.handlers:
+        if isinstance(handler, MemoryHandler):
+            return handler
+    return None
 
 
 # Create the logger instance
