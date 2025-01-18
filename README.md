@@ -34,7 +34,7 @@ That said, SQLite is currently the only supported storage implementation. By def
 
 - Chat database is stored in `chat_database.db` in the project root directory. This file is auto-generated with preset templates and necessary tables to meet the interface requirements. The database file can be deleted it at any time and it will be regenerated.
 - The database contents can be modified manually using any SQLite editing tool (e.g. SQLite3 Editor extension in VS Code). This can be useful for debugging application issues or just to see how your data is stored.
-- *Security Note: While file permissions restrict access to the current user (read/write only), the database file itself is not encrypted. Exercise caution with sensitive information as the contents remain readable if the file is accessed.*
+- *Security Note: While default database file permissions restrict access to just the current user (read/write only), the database file itself is not encrypted. Exercise caution with sensitive information as the contents remain readable if the file is accessed.*
 
 ## Chat Templates
 
@@ -82,18 +82,58 @@ RockTalk implements a flexible template system that allows users to save and reu
    - Full chat history persistence
    - Stream responses with stop/edit capability
    - Copy message functionality
-   - Search within chat history, keyword, date window, title, and contents search support
+   - "Trim History" option to remove all session messages after selected message.
 
-2. Multiple session management ✅
-   - Create new sessions
-   - Switch between existing sessions, active session at top
-   - Delete sessions
-   - Automatic session naming, and can regenerate session title on-demand
-   - Duplicate sessions
-   - Rename sessions
-   - Export/Import sessions
+2. Advanced search capabilities:
+     - Keyword search across all sessions and messages
+     - Filter by titles and/or content
+     - Date range filtering
+     - Configurable search logic (match ALL terms or ANY term)
+     - Batch operations on search results:
+       - Select all/clear selections
+       - Export multiple sessions
+       - Bulk visibility toggle (show/hide from session list)
+       - Batch delete with confirmation
+     - Rich search results:
+       - Message previews with search term context
+       - Quick access to session settings and chat
+       - Session metadata (last active, visibility status)
+     - Search result actions:
+       - Load session
+       - Export session
+       - Access session settings
+     - Support for wildcard searches using *
 
-3. Chat Templates ✅
+3. Comprehensive Session Management ✅
+   - Session Organization:
+     - Active session pinned at top of sidebar
+     - Chronologically grouped session history (Today, Yesterday, This Week, etc.)
+     - Session visibility control (hide from list while maintaining searchability)
+   - Session Creation and Navigation:
+     - Quick new chat creation
+     - Create from template option
+     - Seamless session switching
+     - Automatic session persistence
+   - Session Customization:
+     - Auto-generated descriptive titles
+     - AI-powered title regeneration
+     - Manual title editing
+     - Template-based configuration
+     - Individual session settings
+     - Visibility control
+   - Session Management:
+     - Copy sessions to new session with options:
+       - Copy messages and/or settings
+       - Custom naming
+     - Import/Export capabilities:
+       - Single session export
+       - Bulk session export
+       - JSON format for portability
+     - Session cleanup:
+       - Individual session deletion
+       - Automatic cleanup of related messages
+
+4. Chat Templates ✅
    - Create templates from existing sessions
    - Save and load predefined configurations
    - Custom template naming and descriptions
@@ -101,18 +141,18 @@ RockTalk implements a flexible template system that allows users to save and reu
    - Manage template library
    - Import/Export templates
 
-4. Edit previous chat messages within a session ✅
+5. Edit previous chat messages within a session ✅
    - Edit any user message in history
    - Automatic regeneration of subsequent response (destroys original chat history after the user message)
    - Stop and modify streaming responses
 
-5. Customizable LLM settings ✅
+6. Customizable LLM settings ✅
    - Adjust model parameters (temperature, top_p, etc.)
    - Model selection
    - System prompt customization
    - Save configurations as templates
 
-6. Support for multiple input types
+7. Support for multiple input types
    - Text input ✅
    - Image input ✅
    - PDF documents ⏳

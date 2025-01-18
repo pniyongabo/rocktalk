@@ -5,9 +5,12 @@ from models.interfaces import ChatMessage, ChatSession, ChatExport
 from components.chat import ChatInterface
 from utils.log import logger
 from streamlit_tags import st_tags
-from config.settings import SettingsManager
+from config.settings import PAUSE_BEFORE_RELOADING, SettingsManager
 from components.dialogs.session_settings import session_settings
 from functools import partial
+import time
+import json
+from datetime import datetime
 
 
 @st.dialog("Search")
@@ -57,7 +60,7 @@ class SearchInterface:
             label="Search Terms",
             text="Enter search terms (press enter after each)",
         )
-        logger.info(f"search terms: {st.session_state.search_terms}")
+        logger.debug(f"search terms: {st.session_state.search_terms}")
 
         # Search filters
         with st.expander("Search Filters", expanded=True):
@@ -76,7 +79,6 @@ class SearchInterface:
             self.render_results()
         elif st.session_state.search_terms:
             st.info("No results found")
-        logger.info(str(st.session_state.search_results)[:100])
 
     def render_filters(self):
         """Render search filter options"""
@@ -164,33 +166,235 @@ class SearchInterface:
         except Exception as e:
             st.error(f"Search failed: {str(e)}")
 
+    def show_delete_form(self):
+        with st.form("confirm_delete_sessions"):
+            message_container = st.empty()
+            with message_container:
+                st.warning(
+                    f"Are you sure you want to delete {len(st.session_state.selected_sessions)} "
+                    f"selected session{'s' if len(st.session_state.selected_sessions) > 1 else ''}?"
+                )
+
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.form_submit_button(
+                    "Delete", type="primary", use_container_width=True
+                ):
+                    try:
+                        for session_id in st.session_state.selected_sessions:
+                            self.storage.delete_session(session_id)
+                        message_container.success(
+                            f"Deleted {len(st.session_state.selected_sessions)} "
+                            f"session{'s' if len(st.session_state.selected_sessions) > 1 else ''}"
+                        )
+                        st.session_state.selected_sessions = set()
+                        st.session_state.show_delete_form = False
+                        time.sleep(PAUSE_BEFORE_RELOADING)
+                        st.rerun(scope="fragment")
+                    except Exception as e:
+                        st.error(f"Failed to delete sessions: {str(e)}")
+
+            with col2:
+                if st.form_submit_button("Cancel", use_container_width=True):
+                    st.session_state.show_delete_form = False
+                    st.rerun(scope="fragment")
+
+    def toggle_session_selected(self, session_id: str, checkbox_key: str):
+        if st.session_state[checkbox_key]:
+            st.session_state.selected_sessions.add(session_id)
+        elif session_id in st.session_state.selected_sessions:
+            st.session_state.selected_sessions.remove(session_id)
+
+    # Helper function to check if all sessions are selected
+    def are_all_selected(self):
+        return len(st.session_state.selected_sessions) == len(
+            st.session_state.search_results
+        )
+
+    # Function to handle select all toggle
+    def handle_select_all_change(self):
+        if st.session_state.select_all_checkbox:
+            # Select all
+            st.session_state.selected_sessions.update(
+                result["session"].session_id
+                for result in st.session_state.search_results
+            )
+        else:
+            # Deselect all
+            st.session_state.selected_sessions.clear()
+        # st.rerun(scope="fragment")
+
+    def export_sessions(self):
+        # Show processing message
+        with st.spinner("Preparing export data..."):
+            export_data = []
+            for session_id in st.session_state.selected_sessions:
+                session = self.storage.get_session(session_id)
+                messages = self.storage.get_messages(session_id)
+                export_data.append(
+                    ChatExport(session=session, messages=messages).model_dump_json()
+                )
+        st.download_button(
+            ":material/download: Download Exported Sessions",
+            data=json.dumps(export_data, indent=2),
+            file_name=f"chat_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+            mime="application/json",
+            use_container_width=True,
+            on_click=lambda: setattr(st.session_state, "export_data", None),
+        )
+
+    def toggle_sessions_hidden_state(self):
+        if st.session_state.selected_sessions:
+            # Count current private status
+            private_count = 0
+            for session_id in st.session_state.selected_sessions:
+                session = self.storage.get_session(session_id)
+                if session.is_private:
+                    private_count += 1
+
+            # Determine new state based on majority
+            make_private = private_count < len(st.session_state.selected_sessions) / 2
+
+            for session_id in st.session_state.selected_sessions:
+                session = self.storage.get_session(session_id)
+                session.is_private = make_private
+                self.storage.update_session(session)
+            return f"Made {len(st.session_state.selected_sessions)} sessions {'hidden' if make_private else 'visible'}"
+
+    def render_results_actions(self):
+        col1, col2, col3 = st.columns(3)
+        success = ""
+        with col1:
+            if st.button(
+                "Toggle Hidden",
+                use_container_width=True,
+                disabled=not st.session_state.selected_sessions,
+                help=(
+                    "For all selected sessions, will toggle 'is_private' on the session, either setting to False or True depending on initial state. If `is_private==True`, will prevent session from showing in the session history. Session will still be searchable."
+                    if st.session_state.selected_sessions
+                    else ""
+                ),
+            ):
+                success = self.toggle_sessions_hidden_state()
+        with col2:
+            if st.button(
+                "Export Selected",
+                use_container_width=True,
+                disabled=not st.session_state.selected_sessions,
+                help=(
+                    "For all selected sessions, will export the session and all associated messages to a JSON file. You will be prompted to download the file."
+                    if st.session_state.selected_sessions
+                    else ""
+                ),
+            ):
+                if not st.session_state.get("export_data"):
+                    st.session_state.export_data = True
+                else:
+                    st.session_state.export_data = not st.session_state.export_data
+        with col3:
+            if st.button(
+                "Delete Selected",
+                type="secondary",
+                use_container_width=True,
+                disabled=not st.session_state.selected_sessions,
+                help=(
+                    "For all selected sessions, will delete the session and all associated messages. You will be prompted for confirmation."
+                    if st.session_state.selected_sessions
+                    else ""
+                ),
+            ):
+                st.session_state.show_delete_form = True
+
+        # Show download button if export data is ready
+        if st.session_state.get("export_data"):
+            self.export_sessions()
+
+        if success:
+            st.success(success)
+            time.sleep(1)
+            st.rerun(scope="fragment")
+
+        # Show delete confirmation form if active
+        if st.session_state.get("show_delete_form", False):
+            self.show_delete_form()
+
     def render_results(self):
         """Render search results"""
-        st.markdown("### Search Results")
+        if "selected_sessions" not in st.session_state:
+            st.session_state.selected_sessions = set()
+
+        self.render_results_actions()
+
+        # show number of results, number selected, etc.
+        st.markdown(
+            f"**{len(st.session_state.search_results)}** results found"
+            + (
+                f", **{len(st.session_state.selected_sessions)}** selected"
+                if st.session_state.selected_sessions
+                else ""
+            )
+        )
+
+        st.checkbox(
+            "Clear Selections" if self.are_all_selected() else "Select All",
+            # ":material/select_all:",
+            key="select_all_checkbox",
+            value=self.are_all_selected(),
+            on_change=self.handle_select_all_change,
+        )
 
         for result in st.session_state.search_results:
-            session: ChatSession = result["session"]
-            messages: List[ChatMessage] = result["matching_messages"]
+            self.render_result(result)
 
-            with st.expander(f"**{session.title}** ({len(messages)} matches)"):
+    def render_result(self, result):
+        session: ChatSession = result["session"]
+        messages: List[ChatMessage] = result["matching_messages"]
+
+        col1, col2 = st.columns([0.1, 0.9])
+        with col1:
+            checkbox_key = f"select_{session.session_id}"
+            st.checkbox(
+                f"Checkbox for {session.session_id}",
+                key=checkbox_key,
+                value=session.session_id in st.session_state.selected_sessions,
+                on_change=self.toggle_session_selected,
+                kwargs={
+                    "session_id": session.session_id,
+                    "checkbox_key": checkbox_key,
+                },
+                label_visibility="collapsed",
+            )
+
+        with col2:
+            with st.expander(
+                ("🔒 " if session.is_private else "")
+                + f"**{session.title}** ({len(messages)} matches)"
+            ):
                 # Session metadata
                 # st.text(f"Created: {session.created_at}")
                 st.text(f"Last active: {session.last_active}")
 
+                st.text(
+                    f"Session history visibility: {'Private 🔒' if session.is_private else 'Visible'}"
+                )
+
                 # Actions
-                col1, col2 = st.columns(2)
+                col1, col2, col3 = st.columns(3)
                 with col1:
                     if st.button(
-                        "Open Session",
+                        ":material/open_in_full: Load",
                         key=f"open_{session.session_id}",
+                        help="Load session into chat interface",
                         use_container_width=True,
                     ):
                         self.chat_interface.load_session(session_id=session.session_id)
                         st.rerun()
+
                 with col2:
                     if st.button(
-                        "Sessions",
+                        ":material/settings: Settings",
                         key=f"settings_{session.session_id}",
+                        help="Open session settings dialog",
                         use_container_width=True,
                     ):
                         SettingsManager(
@@ -202,16 +406,34 @@ class SearchInterface:
                         )
                         st.rerun()
 
-                    # messages = self.storage.get_messages(session.session_id)
-                    # export_data = ChatExport(session=session, messages=messages)
+                with col3:
+                    if st.button(
+                        ":material/download: Export",
+                        key=f"export_{session.session_id}",
+                        help="Export session to JSON file",
+                        use_container_width=True,
+                    ):
+                        if not st.session_state.get("download_session"):
+                            st.session_state.download_session = True
+                        else:
+                            st.session_state.download_session = (
+                                not st.session_state.download_session
+                            )
 
-                    # st.download_button(
-                    #     "Download Session",
-                    #     data=export_data.model_dump_json(indent=2),
-                    #     file_name=f"session_{session.session_id}.json",
-                    #     mime="application/json",
-                    #     use_container_width=True,
-                    # )
+                if st.session_state.get("download_session"):
+                    # messages = self.storage.get_messages(session.session_id)
+                    export_data = ChatExport(session=session, messages=messages)
+
+                    st.download_button(
+                        "Download Session",
+                        data=export_data.model_dump_json(indent=2),
+                        file_name=f"session_{session.session_id}.json",
+                        mime="application/json",
+                        on_click=lambda: setattr(
+                            st.session_state, "download_session", False
+                        ),
+                        use_container_width=True,
+                    )
 
                 # Matching messages
                 if messages:

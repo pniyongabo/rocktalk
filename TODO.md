@@ -4,7 +4,6 @@
 
 ## Lower priority
 
-- checkbox multislect for session batch session deletion via a dialog in settings?
 - add thoughts/insights generation with auto injection via system prompt
 - add additional input types (pdfs, html)
 - add voice input/output
