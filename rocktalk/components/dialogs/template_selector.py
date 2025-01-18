@@ -18,6 +18,8 @@ def template_selector_dialog():
             ):
                 if template:
                     settings.clear_session(config=template.config)
+                else:
+                    settings.clear_session()
                 st.rerun()
 
         with col2:
