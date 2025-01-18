@@ -382,6 +382,22 @@ class SettingsManager:
                 title_text_input_key=title_text_input_key
             )
 
+        is_private = st.checkbox(
+            (
+                ":material/lock: Hidden from session history (still searchable)"
+                if self.session.is_private
+                else "Appears in session history"
+            ),
+            value=self.session.is_private,
+            help="Sets a flag 'is_private' on the session which will prevent showing in the session history sidebar. Session will still be searchable.",
+            key=f"hide_session_{self.session.session_id}",
+            # label_visibility="collapsed",
+        )
+        if is_private != self.session.is_private:
+            self.session.is_private = is_private
+            self.storage.update_session(self.session)
+            self.rerun_dialog()
+
         self.render_template_selector()
 
         self._show_config_diff()

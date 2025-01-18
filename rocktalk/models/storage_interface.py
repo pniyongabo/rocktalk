@@ -103,7 +103,9 @@ class StorageInterface(ABC):
         ...
 
     @abstractmethod
-    def get_recent_sessions(self, limit: int = 10) -> List[ChatSession]:
+    def get_recent_sessions(
+        self, limit: int = 10, include_private=False
+    ) -> List[ChatSession]:
         """Get most recently active sessions"""
         ...
 

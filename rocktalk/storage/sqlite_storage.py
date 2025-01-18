@@ -18,6 +18,25 @@ class SQLiteChatStorage(StorageInterface):
         self.db_path = db_path
         self.init_db()
 
+    def _migrate_db(self) -> None:
+        """Handle database migrations"""
+        with self.get_connection() as conn:
+            # Check if is_private column exists
+            cursor = conn.execute(
+                """
+                SELECT name FROM pragma_table_info('sessions') 
+                WHERE name='is_private'
+                """
+            )
+            if not cursor.fetchone():
+                logger.info("Adding is_private column to sessions table")
+                conn.execute(
+                    """
+                    ALTER TABLE sessions 
+                    ADD COLUMN is_private BOOLEAN NOT NULL DEFAULT 0
+                    """
+                )
+
     def get_connection(self) -> sqlite3.Connection:
         """Create a new connection with row factory for dict results"""
         try:
@@ -51,7 +70,8 @@ class SQLiteChatStorage(StorageInterface):
                     title TEXT NOT NULL,
                     created_at TIMESTAMP NOT NULL,
                     last_active TIMESTAMP NOT NULL,
-                    config TEXT NOT NULL
+                    config TEXT NOT NULL,
+                    is_private BOOLEAN NOT NULL DEFAULT 0
                 );
 
                 CREATE TABLE IF NOT EXISTS messages (
@@ -89,6 +109,7 @@ class SQLiteChatStorage(StorageInterface):
             """
             )
             self.initialize_preset_templates()
+            self._migrate_db()
 
     def store_session(self, session: ChatSession) -> None:
 
@@ -96,8 +117,8 @@ class SQLiteChatStorage(StorageInterface):
             conn.execute(
                 """
                 INSERT INTO sessions
-                (session_id, title, created_at, last_active, config)
-                VALUES (?, ?, ?, ?, ?)
+                (session_id, title, created_at, last_active, config, is_private)
+                VALUES (?, ?, ?, ?, ?, ?)
             """,
                 (
                     session.session_id,
@@ -105,6 +126,7 @@ class SQLiteChatStorage(StorageInterface):
                     format_datetime(session.created_at),
                     format_datetime(session.last_active),
                     session.config.model_dump_json(),
+                    session.is_private,
                 ),
             )
 
@@ -113,13 +135,14 @@ class SQLiteChatStorage(StorageInterface):
             conn.execute(
                 """
                 UPDATE sessions
-                SET title = ?, last_active = ?, config = ?
+                SET title = ?, last_active = ?, config = ?, is_private = ?
                 WHERE session_id = ?
             """,
                 (
                     session.title,
                     format_datetime(session.last_active),
                     json.dumps(session.config.model_dump()),
+                    session.is_private,
                     session.session_id,
                 ),
             )
@@ -230,6 +253,7 @@ class SQLiteChatStorage(StorageInterface):
             created_at=parse_datetime(session_data["created_at"]),
             last_active=parse_datetime(session_data["last_active"]),
             config=LLMConfig.model_validate_json(session_data["config"], strict=True),
+            is_private=bool(session_data.get("is_private", False)),
         )
 
     def get_messages(self, session_id: str) -> List[ChatMessage]:
@@ -368,21 +392,31 @@ class SQLiteChatStorage(StorageInterface):
             else:
                 raise ValueError(f"No session found with id {session_id}")
 
-    def get_recent_sessions(self, limit: int = 10) -> List[ChatSession]:
+    def get_recent_sessions(
+        self, limit: int = 10, include_private=False
+    ) -> List[ChatSession]:
         """Get most recently active sessions"""
         with self.get_connection() as conn:
-            cursor = conn.execute(
-                """
+            query = """
                 SELECT s.*,
                     (SELECT COUNT(*) FROM messages WHERE messages.session_id = s.session_id) as message_count,
                     (SELECT MIN(timestamp) FROM messages WHERE messages.session_id = s.session_id) as first_message,
                     (SELECT MAX(timestamp) FROM messages WHERE messages.session_id = s.session_id) as last_message
                 FROM sessions s
+                {where_clause}
                 ORDER BY last_active DESC
                 LIMIT ?
-                """,
-                (limit,),
-            )
+                """
+
+            if not include_private:
+                # Only include non-private sessions
+                where_clause = "WHERE (s.is_private = 0 OR s.is_private IS NULL)"
+                query = query.format(where_clause=where_clause)
+            else:
+                # Include all sessions
+                query = query.format(where_clause="")
+
+            cursor = conn.execute(query, (limit,))
             return [self._deserialize_session(row) for row in cursor.fetchall()]
 
     def rename_session(self, session_id: str, new_title: str) -> None:
