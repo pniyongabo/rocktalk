@@ -138,13 +138,13 @@ class ChatMessage(BaseModel):
             close_dialog()
             st.rerun()
 
-        st.divider()
         # Delete option
         if st.button(
-            "🗑️ Delete Messages Hence",
+            ":material/delete_history: Trim History from Here",
             key=f"delete_message_edit_dialog",
             type="secondary",
             use_container_width=True,
+            help="Delete all messages starting here until the end of the chat history. You will be asked for confirmation.",
         ):
             if st.session_state.get(
                 f"confirm_delete_message_edit_dialog",
