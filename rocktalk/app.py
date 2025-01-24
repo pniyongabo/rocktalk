@@ -1,8 +1,12 @@
 import streamlit as st
 import streamlit.components.v1 as stcomponents
+import streamlit_authenticator as stauth
+import yaml
+from yaml.loader import SafeLoader
+import os
+import dotenv
 from components.chat import ChatInterface
 from components.sidebar import Sidebar
-from config.password import DEPLOYED, check_password
 from models.llm import BedrockLLM, LLMInterface
 from pydantic import BaseModel
 from storage.sqlite_storage import SQLiteChatStorage
@@ -10,6 +14,27 @@ from streamlit.commands.page_config import Layout
 from streamlit_float import float_init
 from streamlit_theme import st_theme
 import dotenv
+import time
+
+
+def render_app():
+    # Initialize storage in session state
+    if "storage" not in st.session_state:
+        st.session_state.storage = SQLiteChatStorage(
+            db_path="chat_database.db"
+        )  # StorageInterface
+
+    # Initialize LLM object in session state
+    if "llm" not in st.session_state:
+        llm: LLMInterface = BedrockLLM(storage=st.session_state.storage)
+        st.session_state.llm = llm
+
+    chat = ChatInterface()
+    chat.render()
+
+    sidebar = Sidebar(chat_interface=chat)
+    sidebar.render()
+
 
 # Load environment variables
 dotenv.load_dotenv()
@@ -30,13 +55,27 @@ if "app_config" not in st.session_state:
 else:
     app_config = st.session_state.app_config
 
-
 st.set_page_config(
     page_title=app_config.page_title,
     page_icon=app_config.page_icon,
     layout=app_config.layout,
 )
+
+
+DEPLOYED = os.getenv("DEPLOYED", "false").lower() == "true"
+if DEPLOYED:
+    with open("auth.yaml") as file:
+        config = yaml.load(file, Loader=SafeLoader)
+
+    st.session_state.authenticator = stauth.Authenticate(
+        "auth.yaml",  # config["credentials"],
+        config["cookie"]["name"],
+        config["cookie"]["key"],
+        config["cookie"]["expiry_days"],
+    )
+
 st.session_state.theme = st_theme()
+
 if "stop_chat_stream" not in st.session_state:
     st.session_state.stop_chat_stream = False
 if "user_input_default" not in st.session_state:
@@ -251,24 +290,29 @@ console.log("js functions loaded");
 # Float feature initialization
 float_init()
 
-# Password check
-if DEPLOYED and not check_password():
-    st.stop()
+if DEPLOYED:
+    if st.session_state.get("authentication_status"):
+        render_app()
 
-# Initialize storage in session state
-if "storage" not in st.session_state:
-    st.session_state.storage = SQLiteChatStorage(
-        db_path="chat_database.db"
-    )  # StorageInterface
+    else:
+        # Authentication check
+        try:
+            st.session_state.authenticator.login("main", key="Login")
+            # print(st.session_state.get("authentication_status"))
+            if st.session_state.get("authentication_status") == False:
+                st.error("Username/password is incorrect")
+                # st.session_state.authentication_status = None
+                # st.rerun()
+            elif st.session_state.get("authentication_status"):
+                name = st.session_state.get("name")
+                st.success(f"Welcome {name}!")
+                time.sleep(2)
+                st.rerun()
+            else:
+                st.warning("Please enter your username and password")
 
+        except Exception as e:
+            st.error(e)
 
-# Initialize LLM object in session state
-if "llm" not in st.session_state:
-    llm: LLMInterface = BedrockLLM(storage=st.session_state.storage)
-    st.session_state.llm = llm
-
-chat = ChatInterface()
-chat.render()
-
-sidebar = Sidebar(chat_interface=chat)
-sidebar.render()
+else:
+    render_app()
