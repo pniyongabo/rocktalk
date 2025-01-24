@@ -218,14 +218,6 @@ class SettingsManager:
 
         # Save settings
         current_template = self._get_matching_template(st.session_state.temp_llm_config)
-        # if current_template:
-        #     # only allow setting as default if a current template is found/in use i.e. not Custom
-        #     set_as_default = st.checkbox(
-        #         "Set as default configuration",
-        #         help="These settings will be used for new sessions",
-        #     )
-        # else:
-        #     set_as_default = False
 
         col1, col2, col3, col4 = st.columns(4)
 
@@ -238,7 +230,11 @@ class SettingsManager:
                 self.session_actions.toggle_action(SettingsActions.export_session)
 
         with col3:
-            if st.button("Set as Default", disabled=not current_template):
+            if st.button(
+                "Set as Default",
+                disabled=not current_template,
+                use_container_width=True,
+            ):
                 self.session_actions.toggle_action(SettingsActions.set_default)
 
         with col4:
@@ -667,24 +663,30 @@ class SettingsManager:
         # Template actions
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            if st.button("Save New Template"):
+            if st.button("Save New Template", use_container_width=True):
                 self.template_actions.toggle_action(
                     SettingsActions.render_new_template_form
                 )
 
         with col2:
             # Only enable edit button if a template is selected
-            if st.button("Edit Template", disabled=not template):
+            if st.button(
+                "Edit Template", disabled=not template, use_container_width=True
+            ):
                 self.template_actions.toggle_action(
                     SettingsActions.render_edit_template_form
                 )
 
         with col3:
-            if st.button("Set as Default", disabled=not template):
+            if st.button(
+                "Set as Default", disabled=not template, use_container_width=True
+            ):
                 self.template_actions.toggle_action(SettingsActions.set_default)
 
         with col4:
-            if st.button("Delete Template", disabled=not template):
+            if st.button(
+                "Delete Template", disabled=not template, use_container_width=True
+            ):
                 self.template_actions.toggle_action(SettingsActions.delete_template)
 
         # Handle active actions

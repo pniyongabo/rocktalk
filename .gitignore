@@ -184,5 +184,5 @@ cython_debug/
 
 .env
 .streamlit/secrets.toml
-*secrets*
+*secret*
 auth.yaml
