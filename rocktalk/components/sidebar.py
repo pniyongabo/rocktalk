@@ -24,6 +24,22 @@ class Sidebar:
     def render(self):
         """Render the complete sidebar"""
         with st.sidebar:
+            if st.session_state.get("authentication_status"):
+                # User is authenticated
+                name = st.session_state.get("name")
+                username = st.session_state.get("username")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.write(f"Welcome *{name}*")
+                with col2:
+                    if st.button(":material/password:", use_container_width=True):
+                        st.write("Change Password")
+                        # st.dialog("Change Password", "Please enter your new password")
+                        # authenticator.reset_password(username, "main")
+                with col3:
+                    if st.button(":material/logout:", use_container_width=True):
+                        st.session_state.authenticator.logout("logout", "unrendered")
+
             st.title("Chat Sessions")
             self.render_header()
             st.divider()
@@ -40,7 +56,7 @@ class Sidebar:
         """Render New Chat and Settings buttons"""
         options_map: PillOptions = {
             0: {
-                "label": "\+ New Chat",
+                "label": "\\+ New Chat",
                 "callback": self.create_new_chat,
             },
             1: {
