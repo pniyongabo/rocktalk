@@ -70,7 +70,7 @@ sniffio==1.3.1
 soupsieve==2.6
 SQLAlchemy==2.0.36
 streamlit==1.41.1
-streamlit-chat-prompt>=0.3.4
+streamlit-chat-prompt>=0.3.5
 streamlit-js-eval==0.1.7
 streamlit-shortcuts==0.1.9
 streamlit_float==0.3.5
@@ -83,4 +83,4 @@ tzdata==2024.2
 urllib3==2.2.3
 watchdog==5.0.3
 yarl==1.15.5
-streamlit-tags==1.2.8
+streamlit-keywords>=0.1.8
