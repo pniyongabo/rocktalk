@@ -4,7 +4,7 @@ from models.storage_interface import SearchOperator, StorageInterface
 from models.interfaces import ChatMessage, ChatSession, ChatExport
 from components.chat import ChatInterface
 from utils.log import logger
-from streamlit_tags import st_tags
+from streamlit_keywords import keywords_input
 from config.settings import PAUSE_BEFORE_RELOADING, SettingsManager
 from components.dialogs.session_settings import session_settings
 from functools import partial
@@ -56,7 +56,7 @@ class SearchInterface:
     def render(self):
         """Render search interface"""
         # Search input
-        st.session_state.search_terms = st_tags(
+        st.session_state.search_terms = keywords_input(
             label="Search Terms",
             text="Enter search terms (press enter after each)",
         )
@@ -65,8 +65,6 @@ class SearchInterface:
         # Search filters
         with st.expander("Search Filters", expanded=True):
             self.render_filters()
-
-        # st.divider()
 
         if st.session_state.search_terms:
             self.perform_search()
