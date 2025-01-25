@@ -149,7 +149,7 @@ def run_git_command(
             check=check,
             timeout=timeout,
         )
-        logger.info(result)
+        logger.debug(f"Git command {command}:\n{result}\n")
         return result.stdout.strip() if result.stdout else ""
     except subprocess.CalledProcessError as e:
         logger.error(f"Git command failed: {command}")
@@ -258,7 +258,7 @@ def fetch_updates() -> bool:
     try:
         output = run_git_command(["git", "fetch"], timeout=10)
         if output:
-            logger.info(f"Fetch output: {output}")
+            logger.info(f"Git fetch output: {output}")
         return True
     except Exception as e:
         logger.exception("Error fetching updates")
@@ -290,7 +290,7 @@ def pull_updates() -> bool:
     try:
         output = run_git_command(["git", "pull"], timeout=30)
         if output:
-            logger.info(f"Pull output: {output}")
+            logger.info(f"Git pull output: {output}")
         return True
     except Exception as e:
         st.error(f"Update failed: {e}")
