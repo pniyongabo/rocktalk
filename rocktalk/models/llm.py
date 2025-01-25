@@ -39,12 +39,6 @@ class LLMInterface(ABC):
 
     def get_state_system_message(self) -> ChatMessage | None:
         if self.get_config().system:
-            # return ChatMessage(
-            #     session_id=st.session_state.current_session_id or "",
-            #     role="system",
-            #     content=str(st.session_state.llm.get_config().system),
-            #     index=-1,
-            # )
             return ChatMessage.from_system_message(
                 system_message=st.session_state.llm.get_config().system,
                 session_id=st.session_state.current_session_id,

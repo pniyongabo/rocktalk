@@ -9,6 +9,7 @@ from models.interfaces import (
     ChatSession,
     ChatTemplate,
     LLMConfig,
+    TurnState,
 )
 import logging
 import pandas as pd
@@ -184,8 +185,33 @@ class SettingsManager:
                 st.error(f"Error applying settings: {str(e)}")
 
     def clear_session(self, config: Optional[LLMConfig] = None):
+        # Clear session identifier
         st.session_state.current_session_id = None
+
+        # Clear messages and message state
         st.session_state.messages = []
+        st.session_state.next_message_id = 0
+
+        # Clear user input states
+        st.session_state.stored_user_input = None
+        st.session_state.user_input_default = None
+
+        # Clear turn state
+        st.session_state.turn_state = TurnState.HUMAN_TURN
+
+        # Clear any pending edits
+        if "edit_message_value" in st.session_state:
+            st.session_state.edit_message_value = None
+
+        # Clear stream and copy states
+        st.session_state.stop_chat_stream = False
+        st.session_state.message_copied = 0
+
+        # Clear any pending callbacks
+        if "next_run_callable" in st.session_state:
+            del st.session_state["next_run_callable"]
+
+        # Update LLM configuration if provided
         self.llm.update_config(config=config)
 
     def render_settings_dialog(self):
@@ -968,4 +994,3 @@ class SettingsManager:
 
             if st.button("Clear Logs"):
                 handler.buffer.clear()
-                st.rerun(scope="fragment")

@@ -8,6 +8,7 @@ from langchain_core.messages import AIMessage
 from models.interfaces import ChatMessage, ChatSession, TurnState
 from models.llm import LLMInterface
 from models.storage_interface import StorageInterface
+from services.creds import get_aws_credentials, get_cached_aws_credentials
 from streamlit_chat_prompt import PromptReturn, pin_bottom, prompt
 from streamlit_shortcuts import button
 from utils.js import (
@@ -184,7 +185,8 @@ class ChatInterface:
 
         # Load session settings
         self.llm.update_config(session.config)
-        logger.info(f"Loaded session {session.session_id} with config {session.config}")
+        logger.info(f"Loaded session {session.session_id} with title: {session.title}")
+        logger.debug(f"Loaded session config: {session.config}")
 
     def _generate_ai_response(self) -> None:
         """Generate and display an AI response."""
@@ -262,6 +264,9 @@ class ChatInterface:
                         message_placeholder.error(
                             escape_dollarsign(f"Error in LLM stream:\n{e}")
                         )
+                        if "ExpiredTokenException" in str(e):
+                            get_cached_aws_credentials.clear()
+                            get_aws_credentials()
                         sec = 15
                         with st.spinner(f"Will reload in {sec} seconds.."):
                             st.markdown("")
