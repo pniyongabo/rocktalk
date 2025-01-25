@@ -150,6 +150,7 @@ class SQLiteChatStorage(StorageInterface):
     def save_message(self, message: ChatMessage) -> None:
         """Save a message to a chat session and update last_active"""
         with self.get_connection() as conn:
+            # allow db to autoincrement message_id
             conn.execute(
                 """
                 INSERT INTO messages
@@ -236,7 +237,8 @@ class SQLiteChatStorage(StorageInterface):
 
     def _deserialize_message(self, row: sqlite3.Row) -> ChatMessage:
         """Deserialize a message from the database row"""
-        return ChatMessage(
+        return ChatMessage.create(
+            message_id=row["message_id"],
             session_id=row["session_id"],
             role=row["role"],
             content=json.loads(row["content"]),

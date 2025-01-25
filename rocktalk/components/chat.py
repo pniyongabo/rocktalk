@@ -298,7 +298,7 @@ class ChatInterface:
                     current_index = len(st.session_state.messages)
 
                     st.session_state.messages.append(
-                        ChatMessage(
+                        ChatMessage.create(
                             session_id=st.session_state.current_session_id or "",
                             role="assistant",
                             content=full_response,

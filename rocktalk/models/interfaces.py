@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from enum import Enum
 from functools import partial
-from typing import List, Optional
+from typing import Any, List, Optional
 
 import streamlit as st
 from langchain.schema import AIMessage, BaseMessage, HumanMessage, SystemMessage
@@ -109,6 +109,7 @@ class ChatTemplate(BaseModel):
 
 
 class ChatMessage(BaseModel):
+    message_id: int
     session_id: str
     role: str
     content: str | list[str | dict]
@@ -123,7 +124,7 @@ class ChatMessage(BaseModel):
             "Editing message will re-run conversation from this point and will replace any existing conversation past this point!",
             icon="⚠️",
         )
-        edit_prompt_key = f"edit_prompt_{id(self)}"
+        edit_prompt_key = f"edit_prompt_{self.message_id}"
         prompt_return = prompt(
             "edit prompt",
             key=edit_prompt_key,
@@ -158,10 +159,42 @@ class ChatMessage(BaseModel):
                 st.session_state[f"confirm_delete_message_edit_dialog"] = True
                 st.warning("Click again to confirm deletion")
 
+    @staticmethod
+    def create(
+        role: str,
+        content: Any,
+        index: int,
+        session_id: Optional[str] = None,
+        message_id: Optional[int] = None,
+        created_at: Optional[datetime] = None,
+    ) -> "ChatMessage":
+        """Create a new ChatMessage object.
+
+        Args:
+            role: The role of the message sender (e.g., 'user', 'assistant', 'system').
+            content: The content of the message, can be string or structured content.
+            index: The position of the message in the conversation sequence.
+            session_id: Optional identifier for the chat session. Defaults to empty string.
+            message_id: Optional unique identifier for the message. Defaults to -1.
+
+        Returns:
+            ChatMessage: A new ChatMessage instance with the specified properties.
+        """
+        return ChatMessage(
+            message_id=message_id or len(st.session_state.messages),
+            session_id=session_id or "",
+            role=role,
+            content=content,
+            index=index,
+            created_at=created_at or datetime.now(),
+        )
+
     def display(self) -> None:
         # Only show edit button for user messages
         text: str = ""
-        with st.container(border=True, key=f"{self.role}_message_container_{id(self)}"):
+        with st.container(
+            border=True, key=f"{self.role}_message_container_{self.message_id}"
+        ):
             with st.chat_message(self.role):
                 if isinstance(self.content, str):
                     text = self.content
@@ -257,8 +290,8 @@ class ChatMessage(BaseModel):
             LangChain SystemMessage object.
         """
         return (
-            ChatMessage(
-                session_id=session_id or "",
+            ChatMessage.create(
+                session_id=session_id,
                 role="system",
                 content=str(system_message),
                 index=-1,
@@ -299,8 +332,8 @@ class ChatMessage(BaseModel):
                     }
                 )
 
-        return ChatMessage(
-            session_id=session_id or "",
+        return ChatMessage.create(
+            session_id=session_id,
             role="user",
             content=content,
             index=index if index is not None else len(st.session_state.messages),
@@ -314,7 +347,9 @@ class ChatMessage(BaseModel):
         """
         text = None
         images = []
-        logger.info(self.content)
+        logger.debug(
+            f"Prompt return raw data from streamlit-chat-prompt: {self.content}"
+        )
         if isinstance(self.content, list):
             for item in self.content:
                 if isinstance(item, dict):
