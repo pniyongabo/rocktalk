@@ -3,6 +3,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple
+from contextlib import contextmanager
 
 from config.settings import LLMConfig
 from models.interfaces import ChatMessage, ChatSession, ChatTemplate
@@ -37,17 +38,32 @@ class SQLiteChatStorage(StorageInterface):
                     """
                 )
 
-    def get_connection(self) -> sqlite3.Connection:
+    @contextmanager
+    def get_connection(self):
         """Create a new connection with row factory for dict results"""
+        conn = None
         try:
-            # Connect to database (creates file if it doesn't exist)
+            # Attempt to create a connection
             conn = sqlite3.connect(self.db_path)
             conn.row_factory = sqlite3.Row
-            return conn
+            cursor = conn.cursor()
+            try:
+                yield cursor  # Provide the cursor to the calling context
+                conn.commit()  # Commit the transaction if no exceptions occur
+            except Exception as e:
+                conn.rollback()  # Roll back the transaction on exception
+                raise RuntimeError(
+                    f"Failed to execute query on database at {self.db_path}: {str(e)}"
+                ) from e
         except Exception as e:
+            # Handle exceptions during connection setup
             raise RuntimeError(
                 f"Failed to connect to database at {self.db_path}: {str(e)}"
-            )
+            ) from e
+        finally:
+            # Ensure the connection is closed if it was successfully opened
+            if conn:
+                conn.close()
 
     def init_db(self) -> None:
         """Initialize database schema"""

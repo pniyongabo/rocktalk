@@ -2,6 +2,9 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![PyPI](https://img.shields.io/pypi/v/rocktalk)](https://pypi.org/project/rocktalk/)
+[![Total Downloads](https://static.pepy.tech/badge/rocktalk)](https://pepy.tech/project/rocktalk)
+[![Monthly Downloads](https://img.shields.io/pypi/dm/rocktalk)](https://pypi.org/project/rocktalk/)
 
 ## Project Overview
 
