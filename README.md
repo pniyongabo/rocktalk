@@ -19,6 +19,30 @@ This project implements RockTalk, a ChatGPT-like chatbot webapp using Streamlit 
 - 📚 Complete session management with import/export
 - ⚙️ Fine-grained control over LLM parameters
 
+## Table of Contents
+
+- [RockTalk: A ChatBot WebApp with Streamlit, LangChain, and Amazon Bedrock](#rocktalk-a-chatbot-webapp-with-streamlit-langchain-and-amazon-bedrock)
+  - [Project Overview](#project-overview)
+  - [Key Features](#key-features)
+  - [Table of Contents](#table-of-contents)
+  - [Technology Stack](#technology-stack)
+  - [Storage](#storage)
+  - [Chat Templates](#chat-templates)
+  - [Implementation Status](#implementation-status)
+  - [Features](#features)
+  - [Requirements](#requirements)
+  - [Getting Started](#getting-started)
+  - [Usage](#usage)
+    - [Starting a New Chat](#starting-a-new-chat)
+    - [Managing Sessions](#managing-sessions)
+    - [Working with Templates](#working-with-templates)
+    - [Search Features](#search-features)
+    - [Keyboard Shortcuts](#keyboard-shortcuts)
+  - [Troubleshooting (TBD)](#troubleshooting-tbd)
+  - [Contributing](#contributing)
+  - [License](#license)
+
+
 ## Technology Stack
 
 - Frontend: Streamlit
