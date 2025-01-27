@@ -1,10 +1,11 @@
+# rocktalk/services/creds.py
 from datetime import datetime
 import os
+from pathlib import Path
 from typing import Optional
 
 import boto3
 import streamlit as st
-from botocore.exceptions import NoCredentialsError
 from pydantic import BaseModel, Field, SecretStr
 from utils.log import logger
 
@@ -17,79 +18,83 @@ class AwsCredentials(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now)
 
 
-def get_aws_credentials(use_streamlit_secrets: bool = True) -> AwsCredentials:
+# rocktalk/services/creds.py
+from datetime import datetime
+import os
+from typing import Optional
+
+import boto3
+import streamlit as st
+from pydantic import BaseModel, Field, SecretStr
+from utils.log import logger
+
+
+class AwsCredentials(BaseModel):
+    aws_access_key_id: SecretStr
+    aws_secret_access_key: SecretStr
+    aws_session_token: Optional[SecretStr] = None
+    aws_region: str
+    created_at: datetime = Field(default_factory=datetime.now)
+
+
+def secrets_file_exists() -> bool:
     """
-    Get AWS credentials in following order:
-    1. boto3 credential chain (AWS CLI/IAM role/environment)
-    2. Streamlit secrets (if deployed)
-    3. Environment variables
-    Returns AwsCredentials object
+    Check if the secrets.toml file exists in any of the standard locations.
+    """
+    # Standard locations for secrets.toml
+    home_dir = Path.home()
+    cwd = Path.cwd()
+    possible_paths = [
+        home_dir / ".streamlit" / "secrets.toml",  # Global secrets file
+        cwd / ".streamlit" / "secrets.toml",  # Per-project secrets file
+    ]
+
+    # Check if any of the possible paths exist
+    for path in possible_paths:
+        if path.exists():
+            return True
+    return False
+
+
+def get_aws_credentials(use_streamlit_secrets: bool = True) -> Optional[AwsCredentials]:
+    """
+    Get AWS credentials from Streamlit secrets if provided.
+    Returns AwsCredentials object if secrets are provided, else None.
     """
     DEFAULT_REGION = "us-west-2"
-    # Try boto3 credential chain first
-    try:
-        session = boto3.Session()
-        credentials = session.get_credentials()
-        if credentials:
-            frozen_credentials = credentials.get_frozen_credentials()
-            return AwsCredentials(
-                aws_access_key_id=SecretStr(frozen_credentials.access_key),
-                aws_secret_access_key=SecretStr(frozen_credentials.secret_key),
-                aws_session_token=(
-                    SecretStr(frozen_credentials.token)
-                    if frozen_credentials.token
-                    else None
-                ),
-                aws_region=session.region_name or DEFAULT_REGION,
-            )
-    except NoCredentialsError:
-        pass
 
-    # Fall back to Streamlit secrets or environment variables
-    try:
-        if use_streamlit_secrets:
-            # Get AWS secrets from Streamlit
-            aws_secrets = st.secrets.get("aws", {})
-            return AwsCredentials(
-                aws_access_key_id=SecretStr(aws_secrets["aws_access_key_id"]),
-                aws_secret_access_key=SecretStr(aws_secrets["aws_secret_access_key"]),
-                aws_region=aws_secrets.get("aws_region", DEFAULT_REGION),
-                aws_session_token=(
-                    SecretStr(aws_secrets["aws_session_token"])
-                    if "aws_session_token" in aws_secrets
-                    else None
-                ),
-            )
-        else:
-            # Get AWS credentials from environment variables
-            aws_access_key = os.getenv("AWS_ACCESS_KEY_ID")
-            aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY")
-            aws_session_token = os.getenv("AWS_SESSION_TOKEN")
+    if use_streamlit_secrets and secrets_file_exists():
+        # Now it's safe to access st.secrets without triggering FileNotFoundError
+        aws_secrets = st.secrets.get("aws", {})
+        aws_access_key_id = aws_secrets.get("aws_access_key_id")
+        aws_secret_access_key = aws_secrets.get("aws_secret_access_key")
 
-            if not aws_access_key or not aws_secret_key:
-                raise ValueError(
-                    "Required AWS credentials not found in environment variables"
-                )
-
+        if aws_access_key_id and aws_secret_access_key:
+            aws_session_token = aws_secrets.get("aws_session_token")
+            aws_region = aws_secrets.get("aws_region", DEFAULT_REGION)
             return AwsCredentials(
-                aws_access_key_id=SecretStr(aws_access_key),
-                aws_secret_access_key=SecretStr(aws_secret_key),
+                aws_access_key_id=SecretStr(aws_access_key_id),
+                aws_secret_access_key=SecretStr(aws_secret_access_key),
+                aws_region=aws_region,
                 aws_session_token=(
                     SecretStr(aws_session_token) if aws_session_token else None
                 ),
-                aws_region=os.getenv("AWS_REGION", DEFAULT_REGION),
             )
+        else:
+            logger.info("AWS access keys not found in Streamlit secrets.")
+    else:
+        logger.debug(
+            "secrets.toml file not found; falling back to default credential chain."
+        )
 
-    except Exception as e:
-        logger.error(f"Error getting AWS credentials: {e}")
-        raise RuntimeError from e
+    # No Streamlit secrets provided or secrets.toml file doesn't exist; return None
+    return None
 
 
-@st.cache_data(ttl=3600)  # Cache for 1 hour
-def get_cached_aws_credentials() -> AwsCredentials:
+def get_cached_aws_credentials() -> Optional[AwsCredentials]:
     """
-    Cached version of AWS credentials retrieval
-    TTL of 1 hour to allow for credential rotation
+    Return AwsCredentials from Streamlit secrets, if present.
+    Credentials from other sources are not cached.
     """
     credentials = get_aws_credentials()
     return credentials

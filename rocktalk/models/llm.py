@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Iterator, List, Optional
-
+import os
 from langchain.schema import BaseMessage
 from langchain_aws import ChatBedrockConverse
 from langchain_core.messages.base import BaseMessageChunk
@@ -125,40 +125,38 @@ class BedrockLLM(LLMInterface):
         additional_model_request_fields: Optional[Dict[str, Any]] = None
         if self._config.parameters.top_k:
             additional_model_request_fields = {"top_k": self._config.parameters.top_k}
+
         creds = get_cached_aws_credentials()
-
-        # # Check if model has changed
-        # new_model = not hasattr(self, "_llm") or (
-        #     hasattr(self, "_current_model")
-        #     and self._current_model != self._config.bedrock_model_id
-        # )
-
-        self._llm = ChatBedrockConverse(
-            region_name=creds.aws_region,
-            model=self._config.bedrock_model_id,
-            temperature=self._config.parameters.temperature,
-            max_tokens=self._config.parameters.max_output_tokens,
-            stop=self._config.stop_sequences,
-            top_p=self._config.parameters.top_p,
-            additional_model_request_fields=additional_model_request_fields,
-            aws_access_key_id=creds.aws_access_key_id,
-            aws_secret_access_key=creds.aws_secret_access_key,
-            aws_session_token=creds.aws_session_token,
+        region_name = (
+            creds.aws_region if creds else os.getenv("AWS_REGION", "us-west-2")
         )
-        # if new_model:
-        #     try:
-        #         messages = [
-        #             ("human", "testing 1,2,3"),
-        #         ]
-        #         logger.info(
-        #             f"Testing new model connection:\n\n{self._llm}\n\nTest message:\n{self._llm.invoke(messages)}"
-        #         )
-        #         self._current_model = self._config.bedrock_model_id
-        #     except Exception as e:
-        #         st.error(
-        #             f"Failed to connect to model '{self._config.bedrock_model_id}'. Please check that you've enabled model access via the AWS Console and try again. You can also change the default model by setting an environment variable ROCKTALK_DEFAULT_MODEL to the model id of your choice (can be set in a .env file store at the project root). For more details, check the official AWS documentation: https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html"
-        #         )
-        #         raise e
+
+        if creds:
+            self._llm = ChatBedrockConverse(
+                region_name=region_name,
+                model=self._config.bedrock_model_id,
+                temperature=self._config.parameters.temperature,
+                max_tokens=self._config.parameters.max_output_tokens,
+                stop=self._config.stop_sequences,
+                top_p=self._config.parameters.top_p,
+                additional_model_request_fields=additional_model_request_fields,
+                aws_access_key_id=creds.aws_access_key_id,
+                aws_secret_access_key=creds.aws_secret_access_key,
+                aws_session_token=(
+                    creds.aws_session_token if creds.aws_session_token else None
+                ),
+            )
+        else:
+            # Let boto3 manage credentials
+            self._llm = ChatBedrockConverse(
+                region_name=region_name,
+                model=self._config.bedrock_model_id,
+                temperature=self._config.parameters.temperature,
+                max_tokens=self._config.parameters.max_output_tokens,
+                stop=self._config.stop_sequences,
+                top_p=self._config.parameters.top_p,
+                additional_model_request_fields=additional_model_request_fields,
+            )
 
     def stream(self, input) -> Iterator[BaseMessageChunk]:
         return self._llm.stream(input=input)

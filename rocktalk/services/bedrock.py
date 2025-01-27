@@ -1,4 +1,5 @@
 # rocktalk/services/bedrock.py
+import os
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
@@ -66,17 +67,28 @@ class FoundationModelSummary:
 class BedrockService:
     def __init__(self):
         creds = get_cached_aws_credentials()
-        self.client = boto3.client(
-            "bedrock",
-            region_name=creds.aws_region,
-            aws_access_key_id=creds.aws_access_key_id.get_secret_value(),
-            aws_secret_access_key=creds.aws_secret_access_key.get_secret_value(),
-            aws_session_token=(
-                creds.aws_session_token.get_secret_value()
-                if creds.aws_session_token
-                else None
-            ),
+        region_name = (
+            creds.aws_region if creds else os.getenv("AWS_REGION", "us-west-2")
         )
+        if creds:
+            # Use credentials from Streamlit secrets
+            self.client = boto3.client(
+                "bedrock",
+                region_name=region_name,
+                aws_access_key_id=creds.aws_access_key_id.get_secret_value(),
+                aws_secret_access_key=creds.aws_secret_access_key.get_secret_value(),
+                aws_session_token=(
+                    creds.aws_session_token.get_secret_value()
+                    if creds.aws_session_token
+                    else None
+                ),
+            )
+        else:
+            # Let boto3 manage credentials
+            self.client = boto3.client(
+                "bedrock",
+                region_name=region_name,
+            )
 
     def list_foundation_models(self) -> List[FoundationModelSummary]:
         """Get list of available foundation models from Bedrock."""
