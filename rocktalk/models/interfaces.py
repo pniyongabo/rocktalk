@@ -191,9 +191,12 @@ class ChatMessage(BaseModel):
 
     def display(self) -> None:
         # Only show edit button for user messages
+        # create uui for this particular message display
+        unique_id = str(uuid.uuid4())
         text: str = ""
         with st.container(
-            border=True, key=f"{self.role}_message_container_{self.message_id}"
+            border=True,
+            key=f"{self.role}_message_container_{self.message_id}_{unique_id}",
         ):
             with st.chat_message(self.role):
                 if isinstance(self.content, str):
@@ -218,13 +221,15 @@ class ChatMessage(BaseModel):
                 if text:
                     st.markdown(escape_dollarsign(text))
 
-            message_button_container_key = f"message_button_container_{id(self)}"
+            message_button_container_key = (
+                f"message_button_container_{self.message_id}_{unique_id}"
+            )
             message_button_container = st.container(
                 border=False, key=message_button_container_key
             )
             with message_button_container:
 
-                message_buttons_key = f"message_buttons_{id(self)}"
+                message_buttons_key = f"message_buttons_{self.message_id}_{unique_id}"
 
                 options_map: PillOptions = [
                     {
