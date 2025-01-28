@@ -257,14 +257,49 @@ class ChatInterface:
                             "latency_ms": latency,
                             "stop_reason": "error",
                         }
-                        st.session_state.stop_chat_stream = False
-                        message_placeholder.error(
-                            escape_dollarsign(f"Error in LLM stream:\n{e}")
+                        # Display an error message to the user without altering the chat history
+                        st.error(
+                            f'An error occurred while generating the AI response. You can click "Retry" to retry chat generation or "Cancel" to edit your prompt.\n\n{e}'
                         )
-                        # No need to manually refresh credentials or delay
-                        # Allow the user to continue chatting without a forced reload
-                        st.session_state.turn_state = TurnState.HUMAN_TURN
-                        return  # Exit the method to prevent further execution
+
+                        # Set the turn state back to HUMAN_TURN
+                        # st.session_state.turn_state = TurnState.HUMAN_TURN
+
+                        # Optionally, provide a retry mechanism
+                        col1, col2 = st.columns(2)
+                        retry_clicked = False
+                        cancel_clicked = False
+
+                        with col1:
+                            retry_clicked = st.button(
+                                "Retry",
+                                use_container_width=True,
+                            )
+                            if retry_clicked:
+                                st.session_state.turn_state = TurnState.AI_TURN
+                                logger.info("Retrying AI response")
+                                # Optionally rerun the script to immediately process the AI response
+                                st.rerun()
+
+                        with col2:
+                            cancel_clicked = st.button(
+                                "Cancel",
+                                use_container_width=True,
+                            )
+                            if cancel_clicked:
+                                st.session_state.stop_chat_stream = True
+                                logger.info("Cancelling AI response, stopping stream")
+                                # Do not return here; let the code continue to handle the cancellation.
+
+                        st.markdown("")  # added to help with autoscroller
+
+                        # If "Retry" was clicked, we have already rerun the script, so the code below will not execute.
+
+                        # If "Cancel" was clicked, we need the code to continue to handle the cancellation.
+
+                        # If neither button was clicked, we return to wait for the user's action.
+                        if not (retry_clicked or cancel_clicked):
+                            return
 
                     if st.session_state.stop_chat_stream:
                         metadata["stop_reason"] = "interrupted"
