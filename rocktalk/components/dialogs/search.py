@@ -1,4 +1,5 @@
 from typing import List
+import uuid
 import streamlit as st
 from models.storage_interface import SearchOperator, StorageInterface
 from models.interfaces import ChatMessage, ChatSession, ChatExport
@@ -23,7 +24,7 @@ class SearchInterface:
     def __init__(self, storage: StorageInterface, chat_interface: ChatInterface):
         self.storage = storage
         self.chat_interface = chat_interface
-        self.init_state()
+        SearchInterface.init_state()
 
     @staticmethod
     def clear_cached_settings_vars():
@@ -32,14 +33,17 @@ class SearchInterface:
             "search_results",
             "search_terms",
             "search_dialog_reloads",
+            "search_keyword_input_key",
         ]
         for var in vars_to_clear:
             try:
                 del st.session_state[var]
             except:
                 pass
+        SearchInterface.init_state()
 
-    def init_state(self):
+    @staticmethod
+    def init_state():
         """Initialize session state for search"""
         if "search_terms" not in st.session_state:
             st.session_state.search_terms = []
@@ -52,13 +56,28 @@ class SearchInterface:
             }
         if "search_results" not in st.session_state:
             st.session_state.search_results = []
+        if "refresh_app" not in st.session_state:
+            st.session_state.refresh_app = False
+        if "search_keyword_input_key" not in st.session_state:
+            st.session_state.search_keyword_input_key = uuid.uuid4().hex
 
     def render(self):
         """Render search interface"""
+
+        if st.session_state.refresh_app:
+            with st.container(border=True):
+                st.warning(
+                    "To see changes applied in the sidebar session history, a full app refresh. \nClick the button below when ready -- you can wait until you're done with your search/edits."
+                )
+                if st.button("Refresh App", use_container_width=True):
+                    st.session_state.refresh_app = False
+                    st.rerun(scope="app")
+
         # Search input
         st.session_state.search_terms = keywords_input(
             label="Search Terms",
             text="Enter search terms (press enter after each)",
+            key=st.session_state.search_keyword_input_key,
         )
         logger.debug(f"search terms: {st.session_state.search_terms}")
 
@@ -181,12 +200,16 @@ class SearchInterface:
                     try:
                         for session_id in st.session_state.selected_sessions:
                             self.storage.delete_session(session_id)
+                            if st.session_state.current_session_id == session_id:
+                                SettingsManager(storage=self.storage).clear_session()
+
                         message_container.success(
                             f"Deleted {len(st.session_state.selected_sessions)} "
                             f"session{'s' if len(st.session_state.selected_sessions) > 1 else ''}"
                         )
                         st.session_state.selected_sessions = set()
                         st.session_state.show_delete_form = False
+                        st.session_state.refresh_app = True
                         time.sleep(PAUSE_BEFORE_RELOADING)
                         st.rerun(scope="fragment")
                     except Exception as e:
@@ -257,6 +280,7 @@ class SearchInterface:
                 session = self.storage.get_session(session_id)
                 session.is_private = make_private
                 self.storage.update_session(session)
+                st.session_state.refresh_app = True
             return f"Made {len(st.session_state.selected_sessions)} sessions {'hidden' if make_private else 'visible'}"
 
     def render_results_actions(self):
