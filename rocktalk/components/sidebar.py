@@ -108,13 +108,12 @@ class Sidebar:
             if st.session_state.current_session_id or st.session_state.get(
                 "temporary_session", False
             ):
+                st.markdown("#### Active session")
+
                 if st.session_state.get("temporary_session", False):
-                    st.markdown("*Temporary session*")
                     if st.button("Save Temporary Session", use_container_width=True):
                         save_temporary_session()
                 else:
-                    st.markdown("#### Active session")
-
                     session = self.storage.get_session(
                         session_id=st.session_state.current_session_id
                     )

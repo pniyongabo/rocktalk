@@ -120,7 +120,7 @@ def escape_dollarsign(raw_string: str) -> str:
     Returns:
         str: The string with dollar signs escaped.
     """
-    return raw_string.replace("$", "\$")
+    return raw_string.replace("$", r"\$")
 
 
 def close_dialog() -> None:

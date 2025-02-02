@@ -49,7 +49,7 @@ def create_date_masks(
     # Today's sessions
     today_mask = df_sessions["last_active"] >= today_start
     if today_mask.any():
-        today_label = f"Today ({today_start.strftime('%m/%d/%Y')})"
+        today_label = f"Today ({today_start.strftime('%a %b %d')})"
         masks.append((today_label, today_mask))
         already_grouped |= today_mask
 
@@ -60,7 +60,7 @@ def create_date_masks(
         & ~already_grouped
     )
     if yesterday_mask.any():
-        yesterday_label = f"Yesterday ({yesterday_start.strftime('%m/%d/%Y')})"
+        yesterday_label = f"Yesterday ({yesterday_start.strftime('%a %b %d')})"
         masks.append((yesterday_label, yesterday_mask))
         already_grouped |= yesterday_mask
 
@@ -71,7 +71,19 @@ def create_date_masks(
         & ~already_grouped
     )
     if week_mask.any():
-        week_label = f"Past Week ({week_start.strftime('%m/%d')} - {yesterday_start.strftime('%m/%d/%Y')})"
+        day_before_yesterday = yesterday_start - pd.Timedelta(days=1)
+        # remove only leading zero from month/day, shorten day of week to 2 letters
+        no_padded_week_start_month = week_start.strftime("%m").lstrip("0")
+        no_padded_week_start_day = week_start.strftime("%d").lstrip("0")
+        two_letter_week_start = week_start.strftime("%a")[:2]
+        two_letter_week_end = day_before_yesterday.strftime("%a")[:2]
+        no_padded_week_end_month = day_before_yesterday.strftime("%m").lstrip("0")
+        no_padded_week_end_day = day_before_yesterday.strftime("%d").lstrip("0")
+        week_start_formatted = f"{two_letter_week_start} {no_padded_week_start_month}/{no_padded_week_start_day}"
+        week_end_formatted = (
+            f"{two_letter_week_end} {no_padded_week_end_month}/{no_padded_week_end_day}"
+        )
+        week_label = f"Past Week ({week_start_formatted} - {week_end_formatted})"
         masks.append((week_label, week_mask))
         already_grouped |= week_mask
 
