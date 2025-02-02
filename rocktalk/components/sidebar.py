@@ -12,6 +12,7 @@ from .dialogs.general_options import general_options
 from .dialogs.session_settings import session_settings
 from .dialogs.search import search_dialog, SearchInterface
 from .dialogs.template_selector import template_selector_dialog
+from .dialogs.save_temporary_session import save_temporary_session
 
 
 class Sidebar:
@@ -56,18 +57,22 @@ class Sidebar:
         """Render New Chat and Settings buttons"""
         options_map: PillOptions = {
             0: {
-                "label": "\\+ New Chat",
+                "label": ":material/add: New",
                 "callback": self.create_new_chat,
             },
             1: {
+                "label": ":material/history_toggle_off:",
+                "callback": partial(self.create_new_chat, temporary=True),
+            },
+            2: {
                 "label": ":material/playlist_add:",
                 "callback": self.open_template_selector,
             },
-            2: {
+            3: {
                 "label": ":material/search:",
                 "callback": self.open_search_dialog,
             },
-            3: {
+            4: {
                 "label": ":material/settings:",
                 "callback": self.open_global_settings,
             },
@@ -100,19 +105,26 @@ class Sidebar:
                 st.info("No chat sessions yet")
                 return
 
-            if (
-                st.session_state.current_session_id
-                # and recent_sessions[0].session_id != st.session_state.current_session_id
+            if st.session_state.current_session_id or st.session_state.get(
+                "temporary_session", False
             ):
-                session = self.storage.get_session(
-                    session_id=st.session_state.current_session_id
-                )
-                st.markdown("#### Active session")
-                self.render_session_item(
-                    session_id=session.session_id,
-                    session_title=session.title,
-                    active=True,
-                )
+                if st.session_state.get("temporary_session", False):
+                    st.markdown("*Temporary session*")
+                    if st.button("Save Temporary Session", use_container_width=True):
+                        # st.session_state.pop("temporary_session")
+                        # st.rerun()
+                        save_temporary_session()
+                else:
+                    st.markdown("#### Active session")
+
+                    session = self.storage.get_session(
+                        session_id=st.session_state.current_session_id
+                    )
+                    self.render_session_item(
+                        session_id=session.session_id,
+                        session_title=session.title,
+                        active=True,
+                    )
                 st.divider()
 
             groups, df_sessions = create_date_masks(recent_sessions=recent_sessions)
@@ -189,7 +201,9 @@ class Sidebar:
             """,
             unsafe_allow_html=True,
         )
-        self.apply_session_list_styles(container_key=header_key, width=101)
+        self.apply_session_list_styles(
+            container_key=header_key, width=37
+        )  # approx 50 pix per new icon
 
     def apply_session_list_styles(self, container_key="session_list", width: int = 200):
         """Apply CSS styles to the session list"""
@@ -209,9 +223,11 @@ class Sidebar:
         )
 
     # Action handlers
-    def create_new_chat(self):
+    def create_new_chat(self, temporary: bool = False):
         """Handle new chat creation"""
         SettingsManager(storage=self.storage).clear_session()
+        st.session_state.temporary_session = temporary
+
         # st.rerun() # is a no-op within callback
 
     def load_session(self, session_id: str):

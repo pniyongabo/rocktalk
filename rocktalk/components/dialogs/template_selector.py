@@ -1,6 +1,5 @@
 import streamlit as st
 from config.settings import SettingsManager
-from models.interfaces import ChatTemplate
 
 
 @st.dialog("Template Selector")
@@ -14,14 +13,21 @@ def template_selector_dialog():
         col1, col2 = st.columns(2)
         with col1:
             if st.form_submit_button(
-                "Create Chat", type="primary", use_container_width=True
+                ":material/add: New Chat", type="primary", use_container_width=True
             ):
                 if template:
                     settings.clear_session(config=template.config)
                 else:
                     settings.clear_session()
                 st.rerun()
-
         with col2:
-            if st.form_submit_button("Cancel", use_container_width=True):
+            if st.form_submit_button(
+                ":material/history_toggle_off: Temporary Chat",
+                use_container_width=True,
+            ):
+                if template:
+                    settings.clear_session(config=template.config)
+                else:
+                    settings.clear_session()
+                st.session_state.temporary_session = True
                 st.rerun()

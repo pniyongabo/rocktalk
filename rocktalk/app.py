@@ -68,13 +68,14 @@ def initialize_app():
         st.session_state.message_copied = 0
     if "stored_user_input" not in st.session_state:
         st.session_state.stored_user_input = None
+    if "temporary_session" not in st.session_state:
+        st.session_state.temporary_session = False
 
 
 def render_header():
     """Render app header when no session is active"""
-    if (
-        "current_session_id" not in st.session_state
-        or st.session_state.current_session_id is None
+    if not st.session_state.get("current_session_id") and not st.session_state.get(
+        "temporary_session"
     ):
         st.subheader(
             "Rocktalk: Powered by AWS Bedrock 🪨 + LangChain 🦜️🔗 + Streamlit 👑"

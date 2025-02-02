@@ -104,10 +104,11 @@ class ChatInterface:
                 : original_message.index
             ]
 
-            st.session_state.storage.delete_messages_from_index(
-                session_id=st.session_state.current_session_id,
-                from_index=original_message.index,
-            )
+            if not st.session_state.get("temporary_session", False):
+                st.session_state.storage.delete_messages_from_index(
+                    session_id=st.session_state.current_session_id,
+                    from_index=original_message.index,
+                )
 
             st.session_state.turn_state = TurnState.HUMAN_TURN
 
@@ -121,7 +122,8 @@ class ChatInterface:
 
                 # Add edited message
                 st.session_state.messages.append(new_message)
-                st.session_state.storage.save_message(message=new_message)
+                if not st.session_state.get("temporary_session", False):
+                    st.session_state.storage.save_message(message=new_message)
 
                 # Set turn state to AI_TURN to generate new response
                 st.session_state.turn_state = TurnState.AI_TURN
@@ -168,7 +170,9 @@ class ChatInterface:
             scroll_to_bottom()
 
             # Save to storage if we have a session, otherwise save later after session title is generated
-            if st.session_state.current_session_id:
+            if st.session_state.current_session_id and not st.session_state.get(
+                "temporary_session", False
+            ):
                 self.storage.save_message(message=human_message)
 
             st.session_state.messages.append(human_message)
@@ -182,6 +186,7 @@ class ChatInterface:
         session = self.storage.get_session(session_id)
         st.session_state.current_session_id = session_id
         st.session_state.messages = self.storage.get_messages(session.session_id)
+        st.session_state.temporary_session = False
 
         # Load session settings
         self.llm.update_config(session.config)
@@ -283,7 +288,7 @@ class ChatInterface:
 
                         with col2:
                             cancel_clicked = st.button(
-                                "Cancel",
+                                ":material/cancel: Cancel",
                                 use_container_width=True,
                             )
                             if cancel_clicked:
@@ -335,24 +340,27 @@ class ChatInterface:
                         )
                     )
 
-                    # Create new session if none exists
-                    if not st.session_state.current_session_id:
-                        title: str = self.llm.generate_session_title()
-                        config = self.llm.get_config().model_copy(deep=True)
-                        new_session: ChatSession = ChatSession(
-                            title=title, config=config
-                        )
-                        st.session_state.current_session_id = new_session.session_id
-                        self.storage.store_session(new_session)
-                        # Update session_id for all messages and save
-                        for msg in st.session_state.messages:
-                            msg.session_id = new_session.session_id
+                    if not st.session_state.get("temporary_session", False):
+                        # Create new session if none exists
+                        if not st.session_state.current_session_id:
+                            title: str = self.llm.generate_session_title()
+                            config = self.llm.get_config().model_copy(deep=True)
+                            new_session: ChatSession = ChatSession(
+                                title=title, config=config
+                            )
+                            st.session_state.current_session_id = new_session.session_id
+                            self.storage.store_session(new_session)
+                            # Update session_id for all messages and save
+                            for msg in st.session_state.messages:
+                                msg.session_id = new_session.session_id
 
-                        # save to storage the original human message we didn't save initially
-                        self.storage.save_message(message=st.session_state.messages[-2])
+                            # save to storage the original human message we didn't save initially
+                            self.storage.save_message(
+                                message=st.session_state.messages[-2]
+                            )
 
-                    # Save AI message
-                    self.storage.save_message(message=st.session_state.messages[-1])
+                        # Save AI message
+                        self.storage.save_message(message=st.session_state.messages[-1])
 
                     # Update state for next human input
                     st.session_state.turn_state = TurnState.HUMAN_TURN

@@ -67,9 +67,9 @@ class SearchInterface:
         if st.session_state.refresh_app:
             with st.container(border=True):
                 st.warning(
-                    "To see changes applied in the sidebar session history, a full app refresh. \nClick the button below when ready -- you can wait until you're done with your search/edits."
+                    "A page refresh is required to see changes applied in the sidebar session history, \nWhen you're done with your search/edits, you can reload by clicking the button below."
                 )
-                if st.button("Refresh App", use_container_width=True):
+                if st.button(":material/refresh: Reload", use_container_width=True):
                     st.session_state.refresh_app = False
                     st.rerun(scope="app")
 
@@ -195,7 +195,7 @@ class SearchInterface:
             col1, col2 = st.columns(2)
             with col1:
                 if st.form_submit_button(
-                    "Delete", type="primary", use_container_width=True
+                    ":material/delete: Delete", type="primary", use_container_width=True
                 ):
                     try:
                         for session_id in st.session_state.selected_sessions:
@@ -216,7 +216,9 @@ class SearchInterface:
                         st.error(f"Failed to delete sessions: {str(e)}")
 
             with col2:
-                if st.form_submit_button("Cancel", use_container_width=True):
+                if st.form_submit_button(
+                    ":material/cancel: Cancel", use_container_width=True
+                ):
                     st.session_state.show_delete_form = False
                     st.rerun(scope="fragment")
 
@@ -447,7 +449,7 @@ class SearchInterface:
                     export_data = ChatExport(session=session, messages=messages)
 
                     st.download_button(
-                        "Download Session",
+                        ":material/download: Download Session",
                         data=export_data.model_dump_json(indent=2),
                         file_name=f"session_{session.session_id}.json",
                         mime="application/json",

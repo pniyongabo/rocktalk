@@ -301,7 +301,7 @@ class SettingsManager:
             col1, col2 = st.columns(2)
             with col1:
                 if st.form_submit_button(
-                    "Create", type="primary", use_container_width=True
+                    ":material/save: Create", type="primary", use_container_width=True
                 ):
                     new_session = ChatSession(
                         title=new_title,
@@ -322,7 +322,9 @@ class SettingsManager:
                     success = True
 
             with col2:
-                if st.form_submit_button("Cancel", use_container_width=True):
+                if st.form_submit_button(
+                    ":material/cancel: Cancel", use_container_width=True
+                ):
                     self.session_actions.rerun()
 
             if success:
@@ -446,7 +448,7 @@ class SettingsManager:
             success = None
             with col1:
                 if st.form_submit_button(
-                    "Accept", type="primary", use_container_width=True
+                    ":material/save: Accept", type="primary", use_container_width=True
                 ):
                     self.storage.rename_session(self.session.session_id, new_title)
                     st.session_state.refresh_title_action = False
@@ -462,7 +464,9 @@ class SettingsManager:
                     st.session_state[title_text_input_key] = self.session.title
 
                 if st.form_submit_button(
-                    "Cancel", use_container_width=True, on_click=reset_title_value
+                    ":material/cancel: Cancel",
+                    use_container_width=True,
+                    on_click=reset_title_value,
                 ):
                     st.session_state.refresh_title_action = False
                     del st.session_state["new_title"]
@@ -474,6 +478,81 @@ class SettingsManager:
                 time.sleep(PAUSE_BEFORE_RELOADING)
                 self.rerun_dialog()
 
+    def render_save_temporary_session(self):
+        """Render option to save temporary session"""
+        # Initialize session state variables
+        if "temp_session_title" not in st.session_state:
+            st.session_state.temp_session_title = "New Session"
+
+        # Use ButtonGroupManager to manage action state
+        if "temporary_session_actions" not in st.session_state:
+            st.session_state.temporary_session_actions = ButtonGroupManager(
+                "temporary_session_actions",
+                ["save_temporary_session"],
+            )
+
+        # Display the form to save the temporary session
+        with st.form("save_temporary_session_form"):
+            # Title input and generate title button
+            col1, col2 = st.columns([0.85, 0.15])
+            with col1:
+                st.session_state.temp_session_title = st.text_input(
+                    "Session Title",
+                    value=st.session_state.temp_session_title,
+                    key="temp_session_title_input",
+                )
+            with col2:
+                st.markdown("####")
+                if st.form_submit_button(
+                    ":material/refresh:", help="Generate AI Title"
+                ):
+                    # Generate title using AI
+                    try:
+                        generated_title = self.llm.generate_session_title()
+                        st.session_state.temp_session_title = generated_title
+                        self.rerun_dialog()
+                    except Exception as e:
+                        st.error(f"Error generating title: {e}")
+
+            # Save and Cancel buttons
+            col1, col2 = st.columns(2)
+            with col1:
+                save_clicked = st.form_submit_button(
+                    ":material/save: Save", type="primary", use_container_width=True
+                )
+            with col2:
+                cancel_clicked = st.form_submit_button(
+                    ":material/cancel: Cancel", use_container_width=True
+                )
+
+            # Handle form submission
+            if save_clicked:
+                # Save the session to storage
+                config = self.llm.get_config().model_copy(deep=True)
+                new_session = ChatSession(
+                    title=st.session_state.temp_session_title, config=config
+                )
+                st.session_state.current_session_id = new_session.session_id
+                self.storage.store_session(new_session)
+
+                # Update session_id for all messages and save them
+                for msg in st.session_state.messages:
+                    msg.session_id = new_session.session_id
+                    self.storage.save_message(message=msg)
+
+                # Clear temporary session flag and update UI
+                st.session_state.temporary_session = False
+                st.session_state.temporary_session_actions.clear_all()
+                del st.session_state["temporary_session_actions"]
+                st.success("Session saved successfully!")
+                time.sleep(PAUSE_BEFORE_RELOADING)
+                self.rerun_app()
+            elif cancel_clicked:
+                # User canceled saving; rerun the app to reset state
+                st.session_state.temporary_session_actions.clear_all()
+                del st.session_state["temporary_session_actions"]
+                self.rerun_app()
+
     def _export_session(self):
         """Export session data"""
         assert self.session, "Session not initialized"
@@ -483,7 +562,7 @@ class SettingsManager:
             "messages": [msg.model_dump() for msg in messages],
         }
         if st.download_button(
-            "Download Session Export",
+            ":material/download: Download Session Export",
             data=str(export_data),
             file_name=f"session_{self.session.session_id}.json",
             mime="application/json",
@@ -507,7 +586,7 @@ class SettingsManager:
             col1, col2 = st.columns(2)
             with col1:
                 if st.form_submit_button(
-                    "Delete", type="primary", use_container_width=True
+                    ":material/delete: Delete", type="primary", use_container_width=True
                 ):
                     try:
                         self.storage.delete_session(self.session.session_id)
@@ -529,7 +608,9 @@ class SettingsManager:
                         )
 
             with col2:
-                if st.form_submit_button("Cancel", use_container_width=True):
+                if st.form_submit_button(
+                    ":material/cancel: Cancel", use_container_width=True
+                ):
                     self.session_actions.rerun()
 
     def _format_parameter_diff(
@@ -755,7 +836,10 @@ class SettingsManager:
             col1, col2 = st.columns(2)
             with col1:
                 if st.form_submit_button(
-                    "Update Template" if template else "Create Template",
+                    (
+                        ":material/save: "
+                        + ("Update Template" if template else "Create Template")
+                    ),
                     type="primary",
                     use_container_width=True,
                 ):
@@ -764,7 +848,9 @@ class SettingsManager:
                     )
 
             with col2:
-                if st.form_submit_button("Cancel", use_container_width=True):
+                if st.form_submit_button(
+                    ":material/cancel: Cancel", use_container_width=True
+                ):
                     self.template_actions.rerun()
 
             if success:
@@ -811,7 +897,7 @@ class SettingsManager:
             col1, col2 = st.columns(2)
             with col1:
                 if st.form_submit_button(
-                    "Delete", type="primary", use_container_width=True
+                    ":material/delete: Delete", type="primary", use_container_width=True
                 ):
                     try:
                         self.storage.delete_chat_template(template.template_id)
@@ -822,7 +908,9 @@ class SettingsManager:
                         st.error(f"Failed to delete '{template.name}' template\n{e}")
 
             with col2:
-                if st.form_submit_button("Cancel", use_container_width=True):
+                if st.form_submit_button(
+                    ":material/cancel: Cancel", use_container_width=True
+                ):
                     self.template_actions.rerun()
 
     def _render_import_export(self):
@@ -831,8 +919,6 @@ class SettingsManager:
 
         # Import section
         self._render_import_section()
-
-        st.divider()
 
         # Reset section
         self._render_reset_section()
@@ -847,7 +933,9 @@ class SettingsManager:
                 help="Upload a previously exported conversation",
             )
 
-            if st.form_submit_button(":material/upload: Import"):
+            if st.form_submit_button(
+                ":material/upload: Import", use_container_width=True
+            ):
                 if uploaded_file is None:
                     st.error("Please select a file to import")
                     return
@@ -900,7 +988,7 @@ class SettingsManager:
                 try:
                     settings = st.session_state.temp_llm_config.model_dump()
                     st.download_button(
-                        "Download Settings",
+                        ":material/download: Download Settings",
                         data=json.dumps(settings, indent=2),
                         file_name="settings.json",
                         mime="application/json",
@@ -913,7 +1001,9 @@ class SettingsManager:
         with st.form("reset_data", clear_on_submit=False):
             st.warning("⚠️ This will delete ALL sessions and messages!")
 
-            if st.form_submit_button(":material/delete_forever: Reset All Data"):
+            if st.form_submit_button(
+                ":material/delete_forever: Reset All Data", use_container_width=True
+            ):
                 if st.session_state.confirm_reset:
                     st.session_state.storage.delete_all_sessions()
                     st.session_state.current_session_id = None

@@ -79,7 +79,9 @@ class UpdateManager:
                 col1, col2 = st.columns(2)
                 with col1:
                     if st.form_submit_button(
-                        "Update Now", type="primary", use_container_width=True
+                        ":material/save: Update Now",
+                        type="primary",
+                        use_container_width=True,
                     ):
                         try:
                             if pull_updates():
@@ -100,7 +102,9 @@ class UpdateManager:
                             logger.exception("Error during update")
 
                 with col2:
-                    if st.form_submit_button("Cancel", use_container_width=True):
+                    if st.form_submit_button(
+                        ":material/cancel: Cancel", use_container_width=True
+                    ):
                         self.reset_state()
                         self.update_actions.rerun()
             else:
