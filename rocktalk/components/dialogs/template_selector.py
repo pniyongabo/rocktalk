@@ -13,7 +13,9 @@ def template_selector_dialog():
         col1, col2 = st.columns(2)
         with col1:
             if st.form_submit_button(
-                ":material/add: New Chat", type="primary", use_container_width=True
+                ":material/add: New Chat",
+                type="primary",
+                use_container_width=True,
             ):
                 if template:
                     settings.clear_session(config=template.config)

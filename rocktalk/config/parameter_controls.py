@@ -4,9 +4,9 @@ from typing import Any, Literal, Optional
 
 import streamlit as st
 from models.interfaces import ChatSession, LLMConfig
+from services.bedrock import BedrockService, FoundationModelSummary
 from utils.log import logger
 from utils.streamlit_utils import OnPillsChange, PillOptions, on_pills_change
-from services.bedrock import BedrockService, FoundationModelSummary
 
 
 class ParameterControls:
@@ -250,7 +250,7 @@ class ParameterControls:
                 kwargs=dict(
                     toggle_key=use_param_key,
                     parameter=escaped_param_name,
-                    value=control_args["value"] if "value" in control_args else None,
+                    value=(control_args["value"] if "value" in control_args else None),
                     control_key=control_key,
                 ),
             )
@@ -393,7 +393,9 @@ class ParameterControls:
                 st.session_state.available_models = []
 
     @staticmethod
-    def render_model_expander(current_model: FoundationModelSummary | None) -> None:
+    def render_model_expander(
+        current_model: FoundationModelSummary | None,
+    ) -> None:
         with st.expander("Change Model", expanded=False):
             if (
                 "model_providers" not in st.session_state

@@ -1,6 +1,6 @@
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from functools import partial
 from typing import Any, List, Optional
@@ -18,8 +18,8 @@ from utils.streamlit_utils import (
     OnPillsChange,
     PillOptions,
     close_dialog,
-    on_pills_change,
     escape_dollarsign,
+    on_pills_change,
 )
 
 
@@ -114,7 +114,7 @@ class ChatMessage(BaseModel):
     role: str
     content: str | list[str | dict]
     index: int
-    created_at: datetime = Field(default_factory=datetime.now)
+    created_at: datetime = Field(default_factory=partial(datetime.now, timezone.utc))
 
     @st.dialog("Edit Message")
     def edit_message(self):
@@ -186,7 +186,7 @@ class ChatMessage(BaseModel):
             role=role,
             content=content,
             index=index,
-            created_at=created_at or datetime.now(),
+            created_at=created_at or datetime.now(timezone.utc),
         )
 
     def display(self) -> None:
@@ -213,7 +213,8 @@ class ChatMessage(BaseModel):
                                 )
                                 width: int = pil_image.size[0]
                                 st.image(
-                                    image=pil_image, width=min(width, MAX_IMAGE_WIDTH)
+                                    image=pil_image,
+                                    width=min(width, MAX_IMAGE_WIDTH),
                                 )
                         else:
                             text_list.append(str(item))
@@ -341,7 +342,7 @@ class ChatMessage(BaseModel):
             session_id=session_id,
             role="user",
             content=content,
-            index=index if index is not None else len(st.session_state.messages),
+            index=(index if index is not None else len(st.session_state.messages)),
         )
 
     def to_prompt_return(self) -> PromptReturn:
@@ -378,12 +379,12 @@ class ChatSession(BaseModel):
     title: str
     config: LLMConfig
     session_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    created_at: datetime = Field(default_factory=datetime.now)
-    last_active: datetime = Field(default_factory=datetime.now)
+    created_at: datetime = Field(default_factory=partial(datetime.now, timezone.utc))
+    last_active: datetime = Field(default_factory=partial(datetime.now, timezone.utc))
     is_private: bool = False
 
 
 class ChatExport(BaseModel):
     session: ChatSession
     messages: List[ChatMessage]
-    exported_at: datetime = Field(default_factory=datetime.now)
+    exported_at: datetime = Field(default_factory=partial(datetime.now, timezone.utc))

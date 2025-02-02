@@ -1,17 +1,18 @@
 # __main__.py
-import logging
-import pathlib
-import subprocess
-import traceback
-import sys
-import click
-import os
 import json
-from importlib.metadata import version
-from dotenv import load_dotenv
-from datetime import datetime
-from pathlib import Path
+import logging
+import os
+import pathlib
 import signal
+import subprocess
+import sys
+import traceback
+from datetime import datetime, timezone
+from importlib.metadata import version
+from pathlib import Path
+
+import click
+from dotenv import load_dotenv
 
 
 def setup_logging():
@@ -151,7 +152,7 @@ def mark_first_run() -> None:
     firstrun_path = get_firstrun_path()
     data: dict[str, str] = {
         "version": VERSION,
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     with open(firstrun_path, "w") as f:
         json.dump(data, f, indent=2)

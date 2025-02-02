@@ -1,5 +1,5 @@
-from logging.handlers import MemoryHandler
 import logging
+from logging.handlers import MemoryHandler
 from typing import Optional
 
 

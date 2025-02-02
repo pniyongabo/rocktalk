@@ -1,17 +1,18 @@
-from typing import List
-import uuid
-import streamlit as st
-from models.storage_interface import SearchOperator, StorageInterface
-from models.interfaces import ChatMessage, ChatSession, ChatExport
-from components.chat import ChatInterface
-from utils.log import logger
-from streamlit_keywords import keywords_input
-from config.settings import PAUSE_BEFORE_RELOADING, SettingsManager
-from components.dialogs.session_settings import session_settings
-from functools import partial
-import time
 import json
-from datetime import datetime
+import time
+import uuid
+from datetime import datetime, timezone
+from functools import partial
+from typing import List
+
+import streamlit as st
+from components.chat import ChatInterface
+from components.dialogs.session_settings import session_settings
+from config.settings import PAUSE_BEFORE_RELOADING, SettingsManager
+from models.interfaces import ChatExport, ChatMessage, ChatSession
+from models.storage_interface import SearchOperator, StorageInterface
+from streamlit_keywords import keywords_input
+from utils.log import logger
 
 
 @st.dialog("Search")
@@ -38,7 +39,7 @@ class SearchInterface:
         for var in vars_to_clear:
             try:
                 del st.session_state[var]
-            except:
+            except Exception as e:
                 pass
         SearchInterface.init_state()
 
@@ -103,10 +104,12 @@ class SearchInterface:
 
         with col1:
             st.session_state.search_filters["titles"] = st.checkbox(
-                "Search titles", value=st.session_state.search_filters["titles"]
+                "Search titles",
+                value=st.session_state.search_filters["titles"],
             )
             st.session_state.search_filters["content"] = st.checkbox(
-                "Search content", value=st.session_state.search_filters["content"]
+                "Search content",
+                value=st.session_state.search_filters["content"],
             )
 
             # Add operator selection
@@ -175,7 +178,10 @@ class SearchInterface:
                 ]
 
                 results.append(
-                    {"session": session, "matching_messages": matching_messages}
+                    {
+                        "session": session,
+                        "matching_messages": matching_messages,
+                    }
                 )
 
             st.session_state.search_results = results
@@ -195,7 +201,9 @@ class SearchInterface:
             col1, col2 = st.columns(2)
             with col1:
                 if st.form_submit_button(
-                    ":material/delete: Delete", type="primary", use_container_width=True
+                    ":material/delete: Delete",
+                    type="primary",
+                    use_container_width=True,
                 ):
                     try:
                         for session_id in st.session_state.selected_sessions:
@@ -260,7 +268,7 @@ class SearchInterface:
         st.download_button(
             ":material/download: Download Exported Sessions",
             data=json.dumps(export_data, indent=2),
-            file_name=f"chat_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+            file_name=f"chat_export_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.json",
             mime="application/json",
             use_container_width=True,
             on_click=lambda: setattr(st.session_state, "export_data", None),

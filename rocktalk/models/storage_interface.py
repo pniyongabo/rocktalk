@@ -1,7 +1,9 @@
+import os
 from abc import ABC, abstractmethod
 from datetime import datetime
 from enum import StrEnum
 from typing import List, Optional, Tuple
+
 from models.interfaces import (
     ChatMessage,
     ChatSession,
@@ -9,7 +11,6 @@ from models.interfaces import (
     LLMConfig,
     LLMParameters,
 )
-import os
 
 ROCKTALK_DEFAULT_MODEL = os.getenv(
     "ROCKTALK_DEFAULT_MODEL", "anthropic.claude-3-5-sonnet-20241022-v2:0"
@@ -43,8 +44,7 @@ class StorageInterface(ABC):
         search_content: bool = True,
         date_range: Optional[Tuple[datetime, datetime]] = None,
     ) -> List[ChatSession]:
-        """
-        Search sessions with advanced filtering
+        """Search sessions with advanced filtering
 
         Args:
             query: List of search terms

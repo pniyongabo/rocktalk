@@ -1,7 +1,9 @@
 from datetime import datetime
 from typing import List, Tuple
+from zoneinfo import ZoneInfo
 
 import pandas as pd
+import streamlit as st
 from models.interfaces import ChatSession
 
 DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
@@ -10,8 +12,7 @@ DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 def create_date_masks(
     recent_sessions: List[ChatSession],
 ) -> Tuple[List[Tuple[str, pd.Series]], pd.DataFrame]:
-    """
-    Creates time-based masks for a DataFrame containing session data.
+    """Creates time-based masks for a DataFrame containing session data.
     Groups sessions into:
     - Today (MM/DD/YYYY)
     - Yesterday (MM/DD/YYYY)
@@ -20,13 +21,22 @@ def create_date_masks(
     - Previous months (Month YYYY)
     - Over a year ago
     """
+    user_timezone = st.session_state.get("user_timezone", "UTC")
+    tzinfo = ZoneInfo(user_timezone)
+
     df_sessions = pd.DataFrame([session.model_dump() for session in recent_sessions])
 
-    # Ensure datetime columns are in the correct format
-    df_sessions["last_active"] = pd.to_datetime(df_sessions["last_active"])
-    df_sessions["created_at"] = pd.to_datetime(df_sessions["created_at"])
+    # Parse datetime columns and set them as timezone-aware in UTC
+    df_sessions["last_active"] = pd.to_datetime(df_sessions["last_active"], utc=True)
+    df_sessions["created_at"] = pd.to_datetime(df_sessions["created_at"], utc=True)
 
-    now = datetime.now()
+    # Convert to user's timezone
+    df_sessions["last_active"] = df_sessions["last_active"].dt.tz_convert(tzinfo)
+    df_sessions["created_at"] = df_sessions["created_at"].dt.tz_convert(tzinfo)
+
+    # Get 'now' in the user's local timezone
+    now = datetime.now(tzinfo)
+
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     yesterday_start = today_start - pd.Timedelta(days=1)
     week_start = today_start - pd.Timedelta(days=7)  # today_start.weekday()

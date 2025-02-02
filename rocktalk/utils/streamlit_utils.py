@@ -112,8 +112,7 @@ def on_pills_change(**kwargs: Unpack[OnPillsChange]):
 
 
 def escape_dollarsign(raw_string: str) -> str:
-    """
-    Escape dollar signs in a string to prevent LaTeX rendering in markdown.
+    """Escape dollar signs in a string to prevent LaTeX rendering in markdown.
 
     Args:
         raw_string (str): The input string.

@@ -8,7 +8,6 @@ from langchain_core.messages import AIMessage
 from models.interfaces import ChatMessage, ChatSession, TurnState
 from models.llm import LLMInterface
 from models.storage_interface import StorageInterface
-from services.creds import get_aws_credentials, get_cached_aws_credentials
 from streamlit_chat_prompt import PromptReturn, pin_bottom, prompt
 from streamlit_shortcuts import button
 from utils.js import (
@@ -19,7 +18,6 @@ from utils.js import (
 )
 from utils.log import logger
 from utils.streamlit_utils import escape_dollarsign
-import time
 
 
 class ChatInterface:

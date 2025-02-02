@@ -1,5 +1,6 @@
-import streamlit as st
 from typing import List
+
+import streamlit as st
 from utils.log import logger
 
 
@@ -7,8 +8,7 @@ class ButtonGroupManager:
     """Manages mutually exclusive button actions in session state"""
 
     def __init__(self, group_name: str, action_keys: List[str]):
-        """
-        Initialize button group
+        """Initialize button group
 
         Args:
             group_name: Unique identifier for this button group
@@ -25,8 +25,7 @@ class ButtonGroupManager:
                 st.session_state[key] = False
 
     def toggle_action(self, action_key: str):
-        """
-        Toggle specified action and disable all others
+        """Toggle specified action and disable all others
 
         Args:
             action_key: The action to toggle

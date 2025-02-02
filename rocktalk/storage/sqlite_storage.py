@@ -1,9 +1,9 @@
 import json
 import sqlite3
-from datetime import datetime
+from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Tuple
-from contextlib import contextmanager
 
 from config.settings import LLMConfig
 from models.interfaces import ChatMessage, ChatSession, ChatTemplate
@@ -25,7 +25,7 @@ class SQLiteChatStorage(StorageInterface):
             # Check if is_private column exists
             cursor = conn.execute(
                 """
-                SELECT name FROM pragma_table_info('sessions') 
+                SELECT name FROM pragma_table_info('sessions')
                 WHERE name='is_private'
                 """
             )
@@ -33,7 +33,7 @@ class SQLiteChatStorage(StorageInterface):
                 logger.info("Adding is_private column to sessions table")
                 conn.execute(
                     """
-                    ALTER TABLE sessions 
+                    ALTER TABLE sessions
                     ADD COLUMN is_private BOOLEAN NOT NULL DEFAULT 0
                     """
                 )
@@ -120,7 +120,7 @@ class SQLiteChatStorage(StorageInterface):
                 CREATE INDEX IF NOT EXISTS idx_messages_timestamp
                 ON messages(timestamp);
 
-                CREATE INDEX IF NOT EXISTS idx_templates_name 
+                CREATE INDEX IF NOT EXISTS idx_templates_name
                 ON templates(name);
             """
             )
@@ -241,7 +241,7 @@ class SQLiteChatStorage(StorageInterface):
                     SET last_active = ?
                     WHERE session_id = ?
                     """,
-                    (format_datetime(datetime.now()), session_id),
+                    (format_datetime(datetime.now(timezone.utc)), session_id),
                 )
 
                 # Commit the transaction
@@ -319,11 +319,11 @@ class SQLiteChatStorage(StorageInterface):
                     # For array content items
                     term_conditions.append(
                         """
-                        (json_type(m.content) = 'array' AND 
+                        (json_type(m.content) = 'array' AND
                         EXISTS (
-                            SELECT 1 
-                            FROM json_each(m.content) as items 
-                            WHERE 
+                            SELECT 1
+                            FROM json_each(m.content) as items
+                            WHERE
                                 (json_extract(items.value, '$.type') = 'text' AND
                                 json_extract(items.value, '$.text') LIKE ?)
                         ))
@@ -345,7 +345,10 @@ class SQLiteChatStorage(StorageInterface):
                 if start_date and end_date:
                     date_conditions.append("m.timestamp BETWEEN ? AND ?")
                     params.extend(
-                        [format_datetime(start_date), format_datetime(end_date)]
+                        [
+                            format_datetime(start_date),
+                            format_datetime(end_date),
+                        ]
                     )
                 elif start_date:
                     date_conditions.append("m.timestamp >= ?")
@@ -446,7 +449,11 @@ class SQLiteChatStorage(StorageInterface):
                 SET title = ?, last_active = ?
                 WHERE session_id = ?
             """,
-                (new_title, format_datetime(datetime.now()), session_id),
+                (
+                    new_title,
+                    format_datetime(datetime.now(timezone.utc)),
+                    session_id,
+                ),
             )
 
     def delete_session(self, session_id: str) -> None:
@@ -508,7 +515,7 @@ class SQLiteChatStorage(StorageInterface):
         with self.get_connection() as conn:
             conn.execute(
                 """
-                INSERT INTO templates 
+                INSERT INTO templates
                 (template_id, name, description, config, is_default)
                 VALUES (?, ?, ?, ?, 0)
                 """,
@@ -554,7 +561,7 @@ class SQLiteChatStorage(StorageInterface):
         with self.get_connection() as conn:
             cursor = conn.execute(
                 """
-                SELECT * FROM templates 
+                SELECT * FROM templates
                 WHERE template_id = ?
                 """,
                 (template_id,),
@@ -569,7 +576,7 @@ class SQLiteChatStorage(StorageInterface):
         with self.get_connection() as conn:
             cursor = conn.execute(
                 """
-                SELECT * FROM templates 
+                SELECT * FROM templates
                 WHERE name = ?
                 """,
                 (template_name,),
@@ -584,7 +591,7 @@ class SQLiteChatStorage(StorageInterface):
         with self.get_connection() as conn:
             cursor = conn.execute(
                 """
-                SELECT * FROM templates 
+                SELECT * FROM templates
                 ORDER BY name
                 """
             )
@@ -614,7 +621,7 @@ class SQLiteChatStorage(StorageInterface):
         with self.get_connection() as conn:
             result = conn.execute(
                 """
-                DELETE FROM templates 
+                DELETE FROM templates
                 WHERE template_id = ?
                 """,
                 (template_id,),
@@ -637,7 +644,8 @@ class SQLiteChatStorage(StorageInterface):
 
                 # Verify template exists
                 cursor = conn.execute(
-                    "SELECT 1 FROM templates WHERE template_id = ?", (template_id,)
+                    "SELECT 1 FROM templates WHERE template_id = ?",
+                    (template_id,),
                 )
                 if not cursor.fetchone():
                     raise ValueError(f"No template found with id {template_id}")
@@ -666,7 +674,7 @@ class SQLiteChatStorage(StorageInterface):
         with self.get_connection() as conn:
             cursor = conn.execute(
                 """
-                SELECT * FROM templates 
+                SELECT * FROM templates
                 WHERE is_default = 1
                 """
             )

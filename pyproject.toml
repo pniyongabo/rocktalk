@@ -1,6 +1,6 @@
 [project]
 name = "rocktalk"
-version = "0.3.0"
+version = "0.3.1"
 description = "A locally running ChatBot WebApp with Streamlit, LangChain, and Amazon Bedrock"
 readme = "README.md"
 authors = [
@@ -60,15 +60,36 @@ Documentation = "https://github.com/tahouse/rocktalk/blob/main/README.md"
 Repository = "https://github.com/tahouse/rocktalk"
 
 [project.optional-dependencies]
-dev = ["pytest>=7.4.2", "black>=23.11.0", "flake8>=6.1.0", "mypy>=1.7.0"]
+dev = ["pytest>=7.4.2", "black>=25.1.0", "flake8>=7.1.1", "mypy>=1.7.0", "pre-commit>=4.1.0", "autoflake>=3.2.0"]
 
 [build-system]
 requires = ["setuptools>=67.0.0", "wheel>=0.38.0"]
 build-backend = "setuptools.build_meta"
 
-
-# [tool.setuptools.packages.find]
-# where = ["."]
-# include = ["rocktalk"]
 [project.scripts]
 rocktalk = "rocktalk.__main__:main"
+
+[tool.black]
+line-length = 88
+target-version = ['py311']
+include = '\.pyi?$'
+extend-exclude = '''
+# A regex preceded with ^/ will apply only to files and directories
+# in the root of the project.
+^/tests/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 88
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
+skip = ["tests"]
+
+[tool.bandit]
+exclude_dirs = ["tests", "scripts"]
+skips = ["B101", "B110", "B311", "B404", "B603", "B606", "B607", "B608"]
+targets = ["rocktalk"]

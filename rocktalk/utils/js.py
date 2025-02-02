@@ -1,5 +1,6 @@
 import streamlit as st
 import streamlit.components.v1 as stcomponents
+from streamlit_js_eval import streamlit_js_eval
 
 from .log import logger
 
@@ -238,3 +239,11 @@ def adjust_chat_message_style():
             """,
         unsafe_allow_html=True,
     )
+
+
+def get_user_timezone() -> str | None:
+    user_timezone = streamlit_js_eval(
+        js_expressions="Intl.DateTimeFormat().resolvedOptions().timeZone",
+        key="get_timezone",
+    )
+    return user_timezone

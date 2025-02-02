@@ -1,27 +1,27 @@
+import logging
+import time
+from datetime import datetime, timezone
 from enum import StrEnum
 from functools import partial
-import time
-from datetime import datetime
 from typing import Any, Callable, List, Optional, Tuple
+
+import pandas as pd
 import streamlit as st
 from models.interfaces import (
     ChatExport,
+    ChatMessage,
     ChatSession,
     ChatTemplate,
     LLMConfig,
     TurnState,
 )
-import logging
-import pandas as pd
-from models.storage_interface import StorageInterface
 from models.llm import LLMInterface
-from utils.log import logger
+from models.storage_interface import StorageInterface
 from services.creds import get_cached_aws_credentials
+from utils.log import get_log_memoryhandler, logger
 
-from models.interfaces import ChatMessage
 from .button_group import ButtonGroupManager
 from .parameter_controls import ParameterControls
-from utils.log import get_log_memoryhandler
 
 # Check for deployment environment
 PAUSE_BEFORE_RELOADING = 2  # seconds
@@ -148,8 +148,7 @@ class SettingsManager:
                 st.session_state[var] = default_value
 
     def render_apply_settings(self, set_as_default: bool = False):
-        """
-        Apply current temporary settings
+        """Apply current temporary settings
         Returns True if successful
         """
 
@@ -175,7 +174,7 @@ class SettingsManager:
                     if self.session and self.storage:
                         self.session.title = st.session_state["session_title_input"]
                         self.session.config = st.session_state.temp_llm_config
-                        self.session.last_active = datetime.now()
+                        self.session.last_active = datetime.now(timezone.utc)
                         self.storage.update_session(self.session)
 
                 st.success(body="Settings applied successfully!")
@@ -230,7 +229,7 @@ class SettingsManager:
 
     def render_refresh_credentials(self):
         if st.button("Refresh AWS Credentials"):
-            get_cached_aws_credentials.clear()
+            get_cached_aws_credentials()
             self.llm.update_config(st.session_state.original_config)
             st.success("Credentials refreshed successfully!")
 
@@ -301,7 +300,9 @@ class SettingsManager:
             col1, col2 = st.columns(2)
             with col1:
                 if st.form_submit_button(
-                    ":material/save: Create", type="primary", use_container_width=True
+                    ":material/save: Create",
+                    type="primary",
+                    use_container_width=True,
                 ):
                     new_session = ChatSession(
                         title=new_title,
@@ -448,7 +449,9 @@ class SettingsManager:
             success = None
             with col1:
                 if st.form_submit_button(
-                    ":material/save: Accept", type="primary", use_container_width=True
+                    ":material/save: Accept",
+                    type="primary",
+                    use_container_width=True,
                 ):
                     self.storage.rename_session(self.session.session_id, new_title)
                     st.session_state.refresh_title_action = False
@@ -518,7 +521,9 @@ class SettingsManager:
             col1, col2 = st.columns(2)
             with col1:
                 save_clicked = st.form_submit_button(
-                    ":material/save: Save", type="primary", use_container_width=True
+                    ":material/save: Save",
+                    type="primary",
+                    use_container_width=True,
                 )
             with col2:
                 cancel_clicked = st.form_submit_button(
@@ -586,7 +591,9 @@ class SettingsManager:
             col1, col2 = st.columns(2)
             with col1:
                 if st.form_submit_button(
-                    ":material/delete: Delete", type="primary", use_container_width=True
+                    ":material/delete: Delete",
+                    type="primary",
+                    use_container_width=True,
                 ):
                     try:
                         self.storage.delete_session(self.session.session_id)
@@ -616,8 +623,7 @@ class SettingsManager:
     def _format_parameter_diff(
         self, param_name: str, old_val, new_val, indent: int = 0
     ) -> List[str]:
-        """
-        Recursively format parameter differences between configurations.
+        """Recursively format parameter differences between configurations.
         Returns a list of markdown formatted diff strings.
         """
         if old_val != new_val and (old_val or new_val):
@@ -778,7 +784,9 @@ class SettingsManager:
         with col2:
             # Only enable edit button if a template is selected
             if st.button(
-                "Edit Template", disabled=not template, use_container_width=True
+                "Edit Template",
+                disabled=not template,
+                use_container_width=True,
             ):
                 self.template_actions.toggle_action(
                     SettingsActions.render_edit_template_form
@@ -786,13 +794,17 @@ class SettingsManager:
 
         with col3:
             if st.button(
-                "Set as Default", disabled=not template, use_container_width=True
+                "Set as Default",
+                disabled=not template,
+                use_container_width=True,
             ):
                 self.template_actions.toggle_action(SettingsActions.set_default)
 
         with col4:
             if st.button(
-                "Delete Template", disabled=not template, use_container_width=True
+                "Delete Template",
+                disabled=not template,
+                use_container_width=True,
             ):
                 self.template_actions.toggle_action(SettingsActions.delete_template)
 
@@ -823,7 +835,9 @@ class SettingsManager:
     def render_save_template_form(self, template: Optional[ChatTemplate] = None):
         with st.form("template_form"):
             name = st.text_input(
-                "Name", help="Template name", value=template.name if template else ""
+                "Name",
+                help="Template name",
+                value=template.name if template else "",
             )
 
             description = st.text_area(
@@ -897,7 +911,9 @@ class SettingsManager:
             col1, col2 = st.columns(2)
             with col1:
                 if st.form_submit_button(
-                    ":material/delete: Delete", type="primary", use_container_width=True
+                    ":material/delete: Delete",
+                    type="primary",
+                    use_container_width=True,
                 ):
                     try:
                         self.storage.delete_chat_template(template.template_id)
@@ -1002,7 +1018,8 @@ class SettingsManager:
             st.warning("⚠️ This will delete ALL sessions and messages!")
 
             if st.form_submit_button(
-                ":material/delete_forever: Reset All Data", use_container_width=True
+                ":material/delete_forever: Reset All Data",
+                use_container_width=True,
             ):
                 if st.session_state.confirm_reset:
                     st.session_state.storage.delete_all_sessions()
@@ -1037,7 +1054,10 @@ class SettingsManager:
 
             with col2:
                 max_entries = st.number_input(
-                    "Maximum Entries", min_value=10, max_value=1000, value=max_entries
+                    "Maximum Entries",
+                    min_value=10,
+                    max_value=1000,
+                    value=max_entries,
                 )
 
             # Get logs from memory handler

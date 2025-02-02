@@ -1,4 +1,3 @@
-import pandas as pd
 import streamlit as st
 from config.settings import SettingsManager
 from models.interfaces import ChatSession

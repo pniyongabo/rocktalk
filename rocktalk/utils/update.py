@@ -1,12 +1,14 @@
-import subprocess
-import time
-import streamlit as st
 import html
-from typing import Optional, List
-from enum import StrEnum
-from .log import logger
 import os
+import subprocess
 import sys
+import time
+from enum import StrEnum
+from typing import List, Optional
+
+import streamlit as st
+
+from .log import logger
 
 PAUSE_BEFORE_RELOADING = 2
 
@@ -114,7 +116,7 @@ class UpdateManager:
                     self.update_actions.rerun()
 
     def reset_state(self):
-        """Reset all update-related state"""
+        """Reset all update-related state."""
         st.session_state.update_available = False
         st.session_state.update_error = None
         self.update_actions.clear_all()
@@ -132,8 +134,7 @@ def run_git_command(
     check: bool = True,
     timeout: int = 30,
 ) -> str:
-    """
-    Helper function to run git commands and capture output
+    """Helper function to run git commands and capture output
 
     Args:
         command (list): Git command to run
@@ -166,8 +167,7 @@ def run_git_command(
 
 
 def validate_git_environment() -> bool:
-    """
-    Validate git environment and repository configuration
+    """Validate git environment and repository configuration
 
     Returns:
         bool: True if git environment is valid, False otherwise
@@ -187,8 +187,7 @@ def validate_git_environment() -> bool:
 
 
 def sanitize_git_output(output: str) -> str:
-    """
-    Sanitize git command output to prevent potential XSS
+    """Sanitize git command output to prevent potential XSS
 
     Args:
         output (str): Raw git command output
@@ -200,8 +199,7 @@ def sanitize_git_output(output: str) -> str:
 
 
 def get_remote_changes(branch: str = "main") -> Optional[str]:
-    """
-    Retrieve remote changes for the specified branch
+    """Retrieve remote changes for the specified branch
 
     Args:
         branch (str): Branch to check for changes
@@ -224,8 +222,7 @@ def get_remote_changes(branch: str = "main") -> Optional[str]:
 
 
 def update_dependencies() -> bool:
-    """
-    Update Python dependencies if requirements.txt has changed
+    """Update Python dependencies if requirements.txt has changed
 
     Returns:
         bool: True if dependencies were updated, False otherwise
@@ -253,8 +250,7 @@ def update_dependencies() -> bool:
 
 
 def fetch_updates() -> bool:
-    """
-    Fetch updates from remote repository
+    """Fetch updates from remote repository
 
     Returns:
         bool: True if fetch was successful
@@ -270,8 +266,7 @@ def fetch_updates() -> bool:
 
 
 def check_update_status() -> bool:
-    """
-    Check if local branch is behind remote
+    """Check if local branch is behind remote
 
     Returns:
         bool: True if updates are available
@@ -285,8 +280,7 @@ def check_update_status() -> bool:
 
 
 def pull_updates() -> bool:
-    """
-    Pull latest changes from remote
+    """Pull latest changes from remote
 
     Returns:
         bool: True if pull was successful

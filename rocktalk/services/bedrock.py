@@ -179,8 +179,7 @@ class BedrockService:
 
     @staticmethod
     def get_max_output_tokens(bedrock_model_id: str) -> int:
-        """
-        Get the maximum number of output tokens for a specific model.
+        """Get the maximum number of output tokens for a specific model.
 
         Args:
             bedrock_model_id (str): The ID of the Bedrock model

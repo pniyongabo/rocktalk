@@ -1,10 +1,9 @@
 # rocktalk/services/creds.py
-from datetime import datetime
-import os
+from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 from typing import Optional
 
-import boto3
 import streamlit as st
 from pydantic import BaseModel, Field, SecretStr
 from utils.log import logger
@@ -15,32 +14,11 @@ class AwsCredentials(BaseModel):
     aws_secret_access_key: SecretStr
     aws_session_token: Optional[SecretStr] = None
     aws_region: str
-    created_at: datetime = Field(default_factory=datetime.now)
-
-
-# rocktalk/services/creds.py
-from datetime import datetime
-import os
-from typing import Optional
-
-import boto3
-import streamlit as st
-from pydantic import BaseModel, Field, SecretStr
-from utils.log import logger
-
-
-class AwsCredentials(BaseModel):
-    aws_access_key_id: SecretStr
-    aws_secret_access_key: SecretStr
-    aws_session_token: Optional[SecretStr] = None
-    aws_region: str
-    created_at: datetime = Field(default_factory=datetime.now)
+    created_at: datetime = Field(default_factory=partial(datetime.now, timezone.utc))
 
 
 def secrets_file_exists() -> bool:
-    """
-    Check if the secrets.toml file exists in any of the standard locations.
-    """
+    """Check if the secrets.toml file exists in any of the standard locations."""
     # Standard locations for secrets.toml
     home_dir = Path.home()
     cwd = Path.cwd()
@@ -56,9 +34,10 @@ def secrets_file_exists() -> bool:
     return False
 
 
-def get_aws_credentials(use_streamlit_secrets: bool = True) -> Optional[AwsCredentials]:
-    """
-    Get AWS credentials from Streamlit secrets if provided.
+def get_aws_credentials(
+    use_streamlit_secrets: bool = True,
+) -> Optional[AwsCredentials]:
+    """Get AWS credentials from Streamlit secrets if provided.
     Returns AwsCredentials object if secrets are provided, else None.
     """
     DEFAULT_REGION = "us-west-2"
@@ -92,9 +71,6 @@ def get_aws_credentials(use_streamlit_secrets: bool = True) -> Optional[AwsCrede
 
 
 def get_cached_aws_credentials() -> Optional[AwsCredentials]:
-    """
-    Return AwsCredentials from Streamlit secrets, if present.
-    Credentials from other sources are not cached.
-    """
+    """Return AwsCredentials from Streamlit secrets, if present. Credentials from other sources are not cached."""
     credentials = get_aws_credentials()
     return credentials

@@ -1,18 +1,18 @@
-from abc import ABC, abstractmethod
-from typing import Any, Dict, Iterator, List, Optional
 import os
-from langchain.schema import BaseMessage
+from abc import ABC, abstractmethod
+from datetime import datetime, timezone
+from typing import Any, Dict, Iterator, List, Optional
+
+import streamlit as st
+from langchain.schema import BaseMessage, HumanMessage
 from langchain_aws import ChatBedrockConverse
 from langchain_core.messages.base import BaseMessageChunk
 from services.creds import get_cached_aws_credentials
-import streamlit as st
-from .interfaces import LLMConfig, ChatMessage, ChatSession
-from .storage_interface import StorageInterface
 from utils.log import logger
-from langchain.schema import BaseMessage, HumanMessage
-from langchain_core.messages import AIMessage
-from datetime import datetime
 from utils.streamlit_utils import escape_dollarsign
+
+from .interfaces import ChatMessage, ChatSession, LLMConfig
+from .storage_interface import StorageInterface
 
 
 class LLMInterface(ABC):
@@ -91,7 +91,10 @@ class LLMInterface(ABC):
             Be direct and concise, no explanations needed. If there are missing messages, do the best you can to keep the summary short."""
         )
         title_response: BaseMessage = self.invoke(
-            [*self.convert_messages_to_llm_format(session=session), title_prompt]
+            [
+                *self.convert_messages_to_llm_format(session=session),
+                title_prompt,
+            ]
         )
         title_content: str | list[str | dict] = title_response.content
 
@@ -99,11 +102,11 @@ class LLMInterface(ABC):
             title: str = escape_dollarsign(title_content.strip('" \n').strip())
         else:
             logger.warning(f"Unexpected generated title response: {title_content}")
-            return f"Chat {datetime.now()}"
+            return f"Chat {datetime.now(timezone.utc)}"
 
         # Fallback to timestamp if we get an empty or invalid response
         if not title:
-            title = f"Chat {datetime.now()}"
+            title = f"Chat {datetime.now(timezone.utc)}"
 
         logger.info(f"New session title: {title}")
         return title

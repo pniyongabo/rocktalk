@@ -1,22 +1,19 @@
+import os
 from pathlib import Path
+
+import dotenv
 import streamlit as st
 import streamlit.components.v1 as stcomponents
 import streamlit_authenticator as stauth
 import yaml
-from yaml.loader import SafeLoader
-import os
-import dotenv
 from components.chat import ChatInterface
 from components.sidebar import Sidebar
-from models.llm import BedrockLLM, LLMInterface
-from pydantic import BaseModel
+from models.llm import BedrockLLM
 from storage.sqlite_storage import SQLiteChatStorage
-from streamlit.commands.page_config import Layout
 from streamlit_float import float_init
 from streamlit_theme import st_theme
-import dotenv
-import time
-
+from utils.js import get_user_timezone
+from yaml.loader import SafeLoader
 
 st.set_page_config(
     page_title="RockTalk",
@@ -70,6 +67,8 @@ def initialize_app():
         st.session_state.stored_user_input = None
     if "temporary_session" not in st.session_state:
         st.session_state.temporary_session = False
+    if "user_timezone" not in st.session_state or not st.session_state.user_timezone:
+        st.session_state.user_timezone = get_user_timezone()
 
 
 def render_header():

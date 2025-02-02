@@ -3,16 +3,16 @@ from functools import partial
 import streamlit as st
 from config.settings import SettingsManager
 from models.storage_interface import StorageInterface
-from utils.update import UpdateManager
 from utils.date_utils import create_date_masks
 from utils.streamlit_utils import OnPillsChange, PillOptions, on_pills_change
-from functools import partial
+from utils.update import UpdateManager
+
 from .chat import ChatInterface
 from .dialogs.general_options import general_options
-from .dialogs.session_settings import session_settings
-from .dialogs.search import search_dialog, SearchInterface
-from .dialogs.template_selector import template_selector_dialog
 from .dialogs.save_temporary_session import save_temporary_session
+from .dialogs.search import SearchInterface, search_dialog
+from .dialogs.session_settings import session_settings
+from .dialogs.template_selector import template_selector_dialog
 
 
 class Sidebar:
@@ -111,8 +111,6 @@ class Sidebar:
                 if st.session_state.get("temporary_session", False):
                     st.markdown("*Temporary session*")
                     if st.button("Save Temporary Session", use_container_width=True):
-                        # st.session_state.pop("temporary_session")
-                        # st.rerun()
                         save_temporary_session()
                 else:
                     st.markdown("#### Active session")
