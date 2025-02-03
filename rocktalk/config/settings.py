@@ -187,6 +187,9 @@ class SettingsManager:
         # Clear session identifier
         st.session_state.current_session_id = None
 
+        # Clear temporary session
+        st.session_state.temporary_session = False
+
         # Clear messages and message state
         st.session_state.messages = []
         st.session_state.next_message_id = 0
