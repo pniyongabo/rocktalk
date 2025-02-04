@@ -103,8 +103,11 @@ This project implements RockTalk, a ChatGPT-like chatbot webapp using Streamlit 
       <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/history_toggle_off_dark.svg">
       <img alt='history_toggle_off' src="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/history_toggle_off_dark.svg" width="12">
     </picture> in the sidebar to start a temporary chat session that will not be saved unless you choose to save it.
-
-- Select a template (optional) or use default settings.
+- **New Chat with Template**: Click the quick template selector <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/playlist_add_light.svg">
+      <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/playlist_add_dark.svg">
+      <img alt='playlist_add' src="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/playlist_add_dark.svg" width="12">
+    </picture> to use a specific template when creating a new chat or temporary chat.
 - Start typing in the chat input box.
 - Use ⌘/⊞ + ⌫ to stop streaming responses.
 
