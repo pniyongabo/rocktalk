@@ -17,7 +17,6 @@
     - [Quick Start (Recommended)](#quick-start-recommended)
   - [Usage](#usage)
     - [Starting a New Chat](#starting-a-new-chat)
-    - [Using Temporary Sessions](#using-temporary-sessions)
     - [Managing Sessions](#managing-sessions)
     - [Working with Templates](#working-with-templates)
     - [Search Features](#search-features)
@@ -97,35 +96,23 @@ This project implements RockTalk, a ChatGPT-like chatbot webapp using Streamlit 
 
 ### Starting a New Chat
 
-- **New Chat**: Click "+" in the sidebar to start a new chat session. This session will be saved automatically.
+- **New Chat**: Click "New +" in the sidebar to start a new chat session. This session will be saved automatically.
 - **New Temporary Chat**: Click <picture>
       <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/history_toggle_off_light.svg">
       <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/history_toggle_off_dark.svg">
       <img alt='history_toggle_off' src="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/history_toggle_off_dark.svg" width="12">
-    </picture> in the sidebar to start a temporary chat session that will not be saved unless you choose to save it.
-- **New Chat with Template**: Click the quick template selector <picture>
+    </picture> (temporary session) in the sidebar to start a temporary chat session that will not be saved unless you choose to save it. These are ideal for spontaneous conversations where you might not need to keep a record.
+  - **Saving a Temporary Session**:
+    - If you wish to save a temporary session, click "Save Temporary Session" in the sidebar.
+    - Provide a session title and confirm. You can use LLM to auto-generate a title.
+    - The session will then be saved to your session history and managed like any other session.
+- **New Chat with Template**: Click <picture>
       <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/playlist_add_light.svg">
       <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/playlist_add_dark.svg">
       <img alt='playlist_add' src="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/playlist_add_dark.svg" width="12">
-    </picture> to use a specific template when creating a new chat or temporary chat.
+    </picture> (quick template selector) to use a specific template when creating a new chat or temporary chat.
 - Start typing in the chat input box.
 - Use ⌘/⊞ + ⌫ to stop streaming responses.
-
-### Using Temporary Sessions
-
-Temporary Sessions allow you to start a quick chat without saving it to your session history. They are ideal for spontaneous conversations where you might not need to keep a record.
-
-- **Starting a Temporary Session**:
-  - Click <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/history_toggle_off_light.svg">
-      <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/history_toggle_off_dark.svg">
-      <img alt='history_toggle_off' src="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/history_toggle_off_dark.svg" width="12">
-    </picture> in the sidebar.
-    - Begin chatting; messages will not be saved automatically.
-- **Saving a Temporary Session**:
-  - If you wish to save a temporary session, click "Save Temporary Session" in the sidebar.
-  - Provide a session title and confirm.
-  - The session will then be saved to your session history and managed like any other session.
 
 ### Managing Sessions
 
