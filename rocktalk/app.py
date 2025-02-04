@@ -13,6 +13,7 @@ from storage.sqlite_storage import SQLiteChatStorage
 from streamlit_float import float_init
 from streamlit_theme import st_theme
 from utils.js import get_user_timezone
+from utils.log import logger, ROCKTALK_DIR
 from yaml.loader import SafeLoader
 
 st.set_page_config(
@@ -24,8 +25,7 @@ st.set_page_config(
 
 def initialize_auth():
     """Initialize authentication if auth.yaml exists"""
-    rocktalk_dir = os.getenv("ROCKTALK_DIR", str(Path.home() / ".rocktalk"))
-    auth_file = Path(rocktalk_dir) / "auth.yaml"
+    auth_file = Path(ROCKTALK_DIR) / "auth.yaml"
 
     if auth_file.exists():
         try:
@@ -91,6 +91,7 @@ def render_app():
 
 def main():
     """Main application entry point"""
+    logger.debug("RockTalk app rerun")
     initialize_app()
 
     # Initialize authentication if configured

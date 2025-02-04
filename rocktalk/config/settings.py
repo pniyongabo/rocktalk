@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from enum import StrEnum
 from functools import partial
 from typing import Any, Callable, List, Optional, Tuple
-
+import json
 import pandas as pd
 import streamlit as st
 from models.interfaces import (
@@ -18,7 +18,7 @@ from models.interfaces import (
 from models.llm import LLMInterface
 from models.storage_interface import StorageInterface
 from services.creds import get_cached_aws_credentials
-from utils.log import get_log_memoryhandler, logger
+from utils.log import USER_LOG_LEVEL, get_log_memoryhandler, logger
 
 from .button_group import ButtonGroupManager
 from .parameter_controls import ParameterControls
@@ -991,8 +991,6 @@ class SettingsManager:
             uploaded_file = st.file_uploader("Import Settings", type=["json"])
             if uploaded_file:
                 try:
-                    import json
-
                     settings = json.loads(uploaded_file.getvalue())
                     # Validate and import settings
                     config: LLMConfig = LLMConfig.model_validate(settings)
@@ -1052,7 +1050,7 @@ class SettingsManager:
                 selected_level = st.selectbox(
                     "Minimum Log Level",
                     options=log_levels,
-                    index=log_levels.index(min_level),
+                    index=log_levels.index(USER_LOG_LEVEL),
                 )
 
             with col2:
@@ -1073,9 +1071,17 @@ class SettingsManager:
             logs = []
             for record in handler.buffer[-max_entries:]:
                 if record.levelno >= getattr(logging, selected_level):
-                    timestamp = (
-                        record.asctime if hasattr(record, "asctime") else record.created
-                    )
+                    # Convert timestamp to consistent string format
+                    if hasattr(record, "asctime"):
+                        timestamp = record.asctime
+                    else:
+                        # Convert created timestamp to string format
+                        timestamp = datetime.fromtimestamp(record.created).strftime(
+                            "%Y-%m-%d %H:%M:%S,%f"
+                        )[
+                            :-3
+                        ]  # Format to match asctime format
+
                     logs.append(
                         {
                             "time": timestamp,
