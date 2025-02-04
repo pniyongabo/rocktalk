@@ -98,7 +98,11 @@ This project implements RockTalk, a ChatGPT-like chatbot webapp using Streamlit 
 ### Starting a New Chat
 
 - **New Chat**: Click "+" in the sidebar to start a new chat session. This session will be saved automatically.
-- **New Temporary Chat**: Click <img src="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/images/history_toggle_off.png" alt='history_toggle_off' width="12"> in the sidebar to start a temporary chat session that will not be saved unless you choose to save it.
+- **New Temporary Chat**: Click <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/history_toggle_off_dark.svg">
+      <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/history_toggle_off_light.svg">
+      <img alt='history_toggle_off' src="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/history_toggle_off_dark.svg" width="12">
+    </picture> in the sidebar to start a temporary chat session that will not be saved unless you choose to save it.
 
 - Select a template (optional) or use default settings.
 - Start typing in the chat input box.
