@@ -99,8 +99,8 @@ This project implements RockTalk, a ChatGPT-like chatbot webapp using Streamlit 
 
 - **New Chat**: Click "+" in the sidebar to start a new chat session. This session will be saved automatically.
 - **New Temporary Chat**: Click <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/history_toggle_off_dark.svg">
-      <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/history_toggle_off_light.svg">
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/history_toggle_off_light.svg">
+      <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/history_toggle_off_dark.svg">
       <img alt='history_toggle_off' src="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/history_toggle_off_dark.svg" width="12">
     </picture> in the sidebar to start a temporary chat session that will not be saved unless you choose to save it.
 
@@ -113,7 +113,11 @@ This project implements RockTalk, a ChatGPT-like chatbot webapp using Streamlit 
 Temporary Sessions allow you to start a quick chat without saving it to your session history. They are ideal for spontaneous conversations where you might not need to keep a record.
 
 - **Starting a Temporary Session**:
-  - Click <img src="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/images/history_toggle_off.png" alt='history_toggle_off' width="12"> in the sidebar.
+  - Click <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/history_toggle_off_light.svg">
+      <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/history_toggle_off_dark.svg">
+      <img alt='history_toggle_off' src="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/history_toggle_off_dark.svg" width="12">
+    </picture> in the sidebar.
     - Begin chatting; messages will not be saved automatically.
 - **Saving a Temporary Session**:
   - If you wish to save a temporary session, click "Save Temporary Session" in the sidebar.
