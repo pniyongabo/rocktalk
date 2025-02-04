@@ -1,6 +1,5 @@
 # TODOs
 
-- general settings doesn't catch that a temp session is in use, its only checking for current_session_id, not current_temp session, etc. I think even just checking for temporary_session may not be enough because we may not have written to the current temp session. so maybe if temp_session and len(messages)>0?
 - allow deleting any message
 - add model name/template name on top of session list
 - change password on auth

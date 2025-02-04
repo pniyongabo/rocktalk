@@ -84,7 +84,10 @@ class SettingsManager:
         self.session = session
         self.storage = storage
         self.llm: LLMInterface = st.session_state.llm
-
+        self.current_session_active: bool = bool(
+            st.session_state.current_session_id
+            or (st.session_state.temporary_session and st.session_state.messages)
+        )
         # Initialize temp config if needed
         self.initialize_temp_config()
 
@@ -122,7 +125,7 @@ class SettingsManager:
                 st.session_state.temp_llm_config = self.session.config.model_copy(
                     deep=True
                 )
-            elif st.session_state.current_session_id:
+            elif self.current_session_active:
                 # we've opened general settings while a session is active/displayed, use default template
                 st.session_state.temp_llm_config = (
                     self.storage.get_default_template().config
@@ -151,9 +154,10 @@ class SettingsManager:
         """Apply current temporary settings
         Returns True if successful
         """
+        need_to_apply_to_new_session = self.current_session_active and not self.session
 
         apply_settings_text = "Apply Settings"
-        if st.session_state.current_session_id and not self.session:
+        if need_to_apply_to_new_session:
             apply_settings_text = "Apply Settings to New Session"
 
         if st.button(apply_settings_text, type="primary", use_container_width=True):
@@ -165,7 +169,7 @@ class SettingsManager:
                     if set_as_default:
                         self._set_default_template(current_template)
 
-                if st.session_state.current_session_id and not self.session:
+                if need_to_apply_to_new_session:
                     # we're editing general settings while another session is active, Apply will create a new session
                     self.clear_session(config=st.session_state.temp_llm_config)
                 else:
@@ -1024,8 +1028,7 @@ class SettingsManager:
             ):
                 if st.session_state.confirm_reset:
                     st.session_state.storage.delete_all_sessions()
-                    st.session_state.current_session_id = None
-                    st.session_state.messages = []
+                    self.clear_session()
                     self.rerun_app()
                 else:
                     st.session_state.confirm_reset = True
