@@ -1,6 +1,4 @@
-import os
 from pathlib import Path
-
 import dotenv
 import streamlit as st
 import streamlit.components.v1 as stcomponents

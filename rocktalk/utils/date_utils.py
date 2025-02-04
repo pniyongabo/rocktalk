@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import streamlit as st
 from models.interfaces import ChatSession
+from .log import logger
 
 DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
@@ -22,7 +23,15 @@ def create_date_masks(
     - Over a year ago
     """
     user_timezone = st.session_state.get("user_timezone", "UTC")
-    tzinfo = ZoneInfo(user_timezone)
+    try:
+        tzinfo = ZoneInfo(user_timezone)
+    except Exception as e:
+        logger.debug(f"Error parsing timezone: {e}")
+        try:
+            system_tz = datetime.now().astimezone().tzname()
+            tzinfo = ZoneInfo(system_tz) if system_tz else ZoneInfo("UTC")
+        except Exception:
+            tzinfo = ZoneInfo("UTC")
 
     df_sessions = pd.DataFrame([session.model_dump() for session in recent_sessions])
 
