@@ -65,32 +65,24 @@ This project implements RockTalk, a ChatGPT-like chatbot webapp using Streamlit 
    pip install rocktalk
    ```
 
-2. (Optional) Disable Streamlit telemetry:
-
-   ```sh
-   mkdir -p ~/.streamlit
-   echo '[browser]
-   gatherUsageStats = false' > ~/.streamlit/config.toml
-   ```
-
-3. Configure AWS credentials:
+2. Configure AWS credentials:
    - RockTalk uses AWS SDK for Python (Boto3). Configure credentials via:
      - AWS CLI configuration
      - Environment variables
      - For more details, see: <https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html>
 
-4. Configure Bedrock Foundation Model access:
+3. Configure Bedrock Foundation Model access:
    - Enable [Model Access](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html) in AWS console
    - Default model: `anthropic.claude-3-5-sonnet-20241022-v2:0`
    - Override default by setting `ROCKTALK_DEFAULT_MODEL` environment variable
 
-5. Start RockTalk:
+4. Start RockTalk:
 
    ```sh
    rocktalk
    ```
 
-6. Access the webapp at <http://localhost:8501>
+5. Access the webapp at <http://localhost:8501>
 
 ## Usage
 
