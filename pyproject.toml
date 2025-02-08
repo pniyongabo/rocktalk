@@ -1,6 +1,6 @@
 [project]
 name = "rocktalk"
-version = "0.3.6"
+version = "0.3.7"
 description = "A locally running ChatBot WebApp with Streamlit, LangChain, and Amazon Bedrock"
 readme = "README.md"
 authors = [
@@ -42,7 +42,7 @@ dependencies = [
     "pydantic>=2.9.2",
     "pandas>=2.2.3",
     "streamlit>=1.41.0",
-    "streamlit-keywords>=0.1.11",
+    "streamlit-keywords>=0.1.12",
     "streamlit-authenticator>=0.4.1",
     "streamlit-chat-prompt>=0.3.7",
     "streamlit-js-eval>=0.1.7",
@@ -60,7 +60,14 @@ Documentation = "https://github.com/tahouse/rocktalk/blob/main/README.md"
 Repository = "https://github.com/tahouse/rocktalk"
 
 [project.optional-dependencies]
-dev = ["pytest>=7.4.2", "black>=25.1.0", "flake8>=7.1.1", "mypy>=1.7.0", "pre-commit>=4.1.0", "autoflake>=3.2.0"]
+dev = [
+    "pytest>=7.4.2",
+    "black>=25.1.0",
+    "flake8>=7.1.1",
+    "mypy>=1.7.0",
+    "pre-commit>=4.1.0",
+    "autoflake>=3.2.0",
+]
 
 [build-system]
 requires = ["setuptools>=67.0.0", "wheel>=0.38.0"]

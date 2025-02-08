@@ -33,6 +33,8 @@ class SearchInterface:
             "search_filters",
             "search_results",
             "search_terms",
+            "initial_search_terms",
+            "search_all",
             "search_dialog_reloads",
             "search_keyword_input_key",
         ]
@@ -48,6 +50,8 @@ class SearchInterface:
         """Initialize session state for search"""
         if "search_terms" not in st.session_state:
             st.session_state.search_terms = []
+        if "initial_search_terms" not in st.session_state:
+            st.session_state.initial_search_terms = None
         if "search_filters" not in st.session_state:
             st.session_state.search_filters = {
                 "titles": True,
@@ -55,6 +59,8 @@ class SearchInterface:
                 "date_range": None,
                 "operator": SearchOperator.AND,
             }
+        if "search_all" not in st.session_state:
+            st.session_state.search_all = False
         if "search_results" not in st.session_state:
             st.session_state.search_results = []
         if "refresh_app" not in st.session_state:
@@ -74,13 +80,25 @@ class SearchInterface:
                     st.session_state.refresh_app = False
                     st.rerun(scope="app")
 
-        # Search input
-        st.session_state.search_terms = keywords_input(
-            label="Search Terms",
-            text="Enter search terms (press enter after each)",
-            key=st.session_state.search_keyword_input_key,
-        )
+        def search_all():
+            st.session_state.initial_search_terms = ["*"]
+            st.session_state.search_keyword_input_key = uuid.uuid4().hex
+
+        col1, col2 = st.columns([0.87, 0.13])
+        with col1:
+            # Search input
+            st.session_state.search_terms = keywords_input(
+                value=st.session_state.initial_search_terms,
+                label="Search Terms",
+                text="Enter search terms (press enter after each)",
+                key=st.session_state.search_keyword_input_key,
+            )
         logger.debug(f"search terms: {st.session_state.search_terms}")
+
+        with col2:
+            # markdown used for vertical alignment
+            st.markdown("#####")
+            st.button("All", on_click=search_all, use_container_width=True)
 
         # Search filters
         with st.expander("Search Filters", expanded=True):

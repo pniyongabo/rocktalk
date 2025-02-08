@@ -127,7 +127,7 @@ def show_first_run_message() -> bool:
     click.secho(
         "  Note: To use a different location, use --config-dir or $ROCKTALK_DIR (see --help)"
     )
-    click.secho("\nWill create these files they don't exist:")
+    click.secho("\nWill create these files if they don't exist:")
     click.secho("  - .streamlit/config.toml: Streamlit configuration")
     click.secho("  - chat_database.db: Chat history and templates")
 
@@ -161,7 +161,7 @@ def mark_first_run() -> None:
 
 def get_help_text() -> str:
     """Get help text for RockTalk"""
-    return f"""RockTalk v{VERSION} - A ChatGPT-like chatbot webapp powered by Amazon Bedrock
+    return f"""RockTalk v{VERSION} - A local, privacy-minded chatbot webapp powered by Amazon Bedrock
 
 Project repository: {REPO_URL}
 
