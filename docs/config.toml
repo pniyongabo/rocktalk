@@ -1,0 +1,11 @@
+[browser]
+serverAddress = "<DNS SERVER NAME>"
+serverPort = 443
+gatherUsageStats = false
+
+[server]
+headless = true
+enableCORS = false
+enableXsrfProtection = false
+port = 8502
+disconnectedSessionTTL = 2592000
