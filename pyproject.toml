@@ -1,6 +1,6 @@
 [project]
 name = "rocktalk"
-version = "0.3.7"
+version = "0.3.8"
 description = "A locally running ChatBot WebApp with Streamlit, LangChain, and Amazon Bedrock"
 readme = "README.md"
 authors = [
@@ -44,7 +44,7 @@ dependencies = [
     "streamlit>=1.41.0",
     "streamlit-keywords>=0.1.12",
     "streamlit-authenticator>=0.4.1",
-    "streamlit-chat-prompt>=0.3.7",
+    "streamlit-chat-prompt>=0.3.8",
     "streamlit-js-eval>=0.1.7",
     "streamlit-shortcuts>=0.1.9",
     "streamlit_float>=0.3.5",
