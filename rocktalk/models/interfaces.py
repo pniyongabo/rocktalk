@@ -131,6 +131,7 @@ class ChatMessage(BaseModel):
             placeholder=previous_prompt.text or "",
             main_bottom=False,
             default=previous_prompt,
+            enable_clipboard_inspector=True,
         )
         focus_prompt(container_key=edit_prompt_key)
 

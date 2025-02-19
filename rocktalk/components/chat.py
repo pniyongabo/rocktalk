@@ -150,6 +150,7 @@ class ChatInterface:
                     max_image_size=5 * 1024 * 1024,
                     default=st.session_state.user_input_default
                     or st.session_state.stored_user_input,
+                    enable_clipboard_inspector=True,
                 )
                 if chat_prompt_return:
                     logger.info(f"Received user text input:\n{chat_prompt_return.text}")
