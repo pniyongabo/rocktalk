@@ -38,6 +38,22 @@ class SQLiteChatStorage(StorageInterface):
                     """
                 )
 
+            # Check if total_tokens_used column exists
+            cursor = conn.execute(
+                """
+                SELECT name FROM pragma_table_info('sessions')
+                WHERE name='total_tokens_used'
+                """
+            )
+            if not cursor.fetchone():
+                logger.info("Adding total_tokens_used column to sessions table")
+                conn.execute(
+                    """
+                    ALTER TABLE sessions
+                    ADD COLUMN total_tokens_used INTEGER NOT NULL DEFAULT 0
+                    """
+                )
+
     @contextmanager
     def get_connection(self):
         """Create a new connection with row factory for dict results"""
@@ -87,7 +103,8 @@ class SQLiteChatStorage(StorageInterface):
                     created_at TIMESTAMP NOT NULL,
                     last_active TIMESTAMP NOT NULL,
                     config TEXT NOT NULL,
-                    is_private BOOLEAN NOT NULL DEFAULT 0
+                    is_private BOOLEAN NOT NULL DEFAULT 0,
+                    total_tokens_used INTEGER NOT NULL DEFAULT 0
                 );
 
                 CREATE TABLE IF NOT EXISTS messages (
@@ -133,8 +150,8 @@ class SQLiteChatStorage(StorageInterface):
             conn.execute(
                 """
                 INSERT INTO sessions
-                (session_id, title, created_at, last_active, config, is_private)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (session_id, title, created_at, last_active, config, is_private, total_tokens_used)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     session.session_id,
@@ -143,6 +160,7 @@ class SQLiteChatStorage(StorageInterface):
                     format_datetime(session.last_active),
                     session.config.model_dump_json(),
                     session.is_private,
+                    session.total_tokens_used,
                 ),
             )
 
@@ -151,7 +169,7 @@ class SQLiteChatStorage(StorageInterface):
             conn.execute(
                 """
                 UPDATE sessions
-                SET title = ?, last_active = ?, config = ?, is_private = ?
+                SET title = ?, last_active = ?, config = ?, is_private = ?, total_tokens_used = ?
                 WHERE session_id = ?
             """,
                 (
@@ -159,6 +177,7 @@ class SQLiteChatStorage(StorageInterface):
                     format_datetime(session.last_active),
                     json.dumps(session.config.model_dump()),
                     session.is_private,
+                    session.total_tokens_used,
                     session.session_id,
                 ),
             )
@@ -272,6 +291,7 @@ class SQLiteChatStorage(StorageInterface):
             last_active=parse_datetime(session_data["last_active"]),
             config=LLMConfig.model_validate_json(session_data["config"], strict=True),
             is_private=bool(session_data.get("is_private", False)),
+            total_tokens_used=session_data.get("total_tokens_used", 0),
         )
 
     def get_messages(self, session_id: str) -> List[ChatMessage]:

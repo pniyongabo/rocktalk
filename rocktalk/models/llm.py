@@ -16,6 +16,39 @@ from .interfaces import ChatMessage, ChatSession, LLMConfig
 from .rate_limiter import TokenRateLimiter
 from .storage_interface import StorageInterface
 
+MODEL_CONTEXT_LIMITS = {
+    # Claude models
+    # Claude 3.5 models
+    "anthropic.claude-3-5-haiku-20241022-v1:0": 200_000,
+    "anthropic.claude-3-5-sonnet-20240620-v1:0": 200_000,
+    "anthropic.claude-3-5-sonnet-20241022-v2:0": 200_000,
+    # Claude 3.7 models
+    "us.anthropic.claude-3-7-sonnet-20250219-v1:0": 200_000,
+    # Claude 3 models
+    "anthropic.claude-3-haiku-20240307-v1:0": 200_000,
+    "anthropic.claude-3-sonnet-20240229-v1:0": 200_000,
+    "anthropic.claude-3-opus-20240229-v1:0": 200_000,
+    # Older Claude models (keeping for backward compatibility)
+    "anthropic.claude-v2": 200_000,
+    "anthropic.claude-v2:1": 200_000,
+    # Llama models
+    "meta.llama2-13b-chat-v1": 4_096,
+    "meta.llama2-70b-chat-v1": 4_096,
+    "meta.llama3-8b-instruct": 8_192,
+    "meta.llama3-70b-instruct": 8_192,
+    # Titan models
+    "amazon.titan-text-express-v1": 8_000,
+    "amazon.titan-text-lite-v1": 4_000,
+    "amazon.titan-text-premier-v1:0": 32_000,
+    # Mistral models
+    "mistral.mistral-7b-instruct-v0:2": 8_000,
+    "mistral.mixtral-8x7b-instruct-v0:1": 32_000,
+    "mistral.mistral-large-2402-v1:0": 32_000,
+    "mistral.mistral-small-2402-v1:0": 32_000,
+    # Default fallback value
+    "default": 100_000,
+}
+
 
 class LLMInterface(ABC):
     _config: LLMConfig
@@ -189,29 +222,44 @@ class BedrockLLM(LLMInterface):
             )
         self._init_rate_limiter()  # Re-initialize rate limiter when config changes
 
-    def _extract_token_usage(self, usage_data: Optional[Dict]) -> int:
+    def _extract_token_usage(self, usage_data: Optional[Dict]) -> Dict[str, int]:
         """Extract token usage from Bedrock response metadata
 
         Args:
             usage_data: Usage metadata from Bedrock response
 
         Returns:
-            Total token count (input + output)
+            Dictionary with token usage counts
         """
+        # Initialize with zeros
+        result = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+
         if not usage_data:
-            return 0
+            return result
 
-        input_tokens = usage_data.get("input_tokens", 0)
-        output_tokens = usage_data.get("output_tokens", 0)
+        # Check if data is nested (as shown in your example)
+        if isinstance(usage_data, dict):
+            # Sometimes the usage data may be directly accessible
+            if "input_tokens" in usage_data:
+                result["input_tokens"] = usage_data.get("input_tokens", 0)
+                result["output_tokens"] = usage_data.get("output_tokens", 0)
+                result["total_tokens"] = usage_data.get("total_tokens", 0)
 
-        # Some Bedrock models use different keys
-        if input_tokens == 0:
-            input_tokens = usage_data.get("promptTokenCount", 0)
-        if output_tokens == 0:
-            output_tokens = usage_data.get("completionTokenCount", 0)
+            # For Claude and other models that use different key structures
+            elif "promptTokenCount" in usage_data:
+                result["input_tokens"] = usage_data.get("promptTokenCount", 0)
+                result["output_tokens"] = usage_data.get("completionTokenCount", 0)
+                result["total_tokens"] = (
+                    result["input_tokens"] + result["output_tokens"]
+                )
 
-        # Return total tokens
-        return input_tokens + output_tokens
+        # If total_tokens is still 0, calculate it from input and output
+        if result["total_tokens"] == 0 and (
+            result["input_tokens"] > 0 or result["output_tokens"] > 0
+        ):
+            result["total_tokens"] = result["input_tokens"] + result["output_tokens"]
+
+        return result
 
     def _estimate_tokens(self, messages: List[BaseMessage]) -> int:
         """Estimate the number of tokens for input messages.
@@ -228,6 +276,172 @@ class BedrockLLM(LLMInterface):
 
         # Add safety margin (30%)
         return int(input_tokens * 1.3)
+
+    def get_model_context_limit(self) -> int:
+        """Get the context token limit for the current model.
+
+        Returns:
+            Maximum context size in tokens
+        """
+        model_id = self.get_config().bedrock_model_id
+        return MODEL_CONTEXT_LIMITS.get(model_id, MODEL_CONTEXT_LIMITS["default"])
+
+    def get_token_usage_stats(self, session_id: Optional[str] = None) -> Dict[str, Any]:
+        """Get token usage statistics for a session
+
+        Args:
+            session_id: Optional session ID. If None, uses current session.
+
+        Returns:
+            Dictionary with token usage statistics
+        """
+        # Check for temporary session first
+        if st.session_state.get("temporary_session", False):
+            temp_tokens = st.session_state.get("temp_session_tokens", 0)
+            model_limit = self.get_model_context_limit()
+            context_used_percent = (
+                (temp_tokens / model_limit) * 100 if model_limit > 0 else 0
+            )
+
+            return {
+                "total_tokens": temp_tokens,
+                "model_limit": model_limit,
+                "context_used_percent": context_used_percent,
+                "rate_limit": self._rate_limiter.tokens_per_minute,
+                "rate_usage": self._rate_limiter.get_current_usage(),
+                "rate_used_percent": self._rate_limiter.get_usage_percentage(),
+                "is_temporary": True,
+            }
+
+        # For persistent sessions
+        target_session_id = session_id or st.session_state.get("current_session_id")
+
+        if not target_session_id:
+            return {
+                "total_tokens": 0,
+                "model_limit": self.get_model_context_limit(),
+                "context_used_percent": 0,
+                "rate_limit": self._rate_limiter.tokens_per_minute,
+                "rate_usage": self._rate_limiter.get_current_usage(),
+                "rate_used_percent": self._rate_limiter.get_usage_percentage(),
+            }
+
+        try:
+            session = self._storage.get_session(target_session_id)
+            model_limit = self.get_model_context_limit()
+
+            # If session doesn't have total_tokens_used attribute yet, assume 0
+            total_tokens = getattr(session, "total_tokens_used", 0)
+            context_used_percent = (
+                (total_tokens / model_limit) * 100 if model_limit > 0 else 0
+            )
+
+            return {
+                "total_tokens": total_tokens,
+                "model_limit": model_limit,
+                "context_used_percent": context_used_percent,
+                "rate_limit": self._rate_limiter.tokens_per_minute,
+                "rate_usage": self._rate_limiter.get_current_usage(),
+                "rate_used_percent": self._rate_limiter.get_usage_percentage(),
+                "session_id": target_session_id,
+                "session_title": session.title,
+            }
+        except Exception as e:
+            logger.warning(f"Failed to get token usage statistics: {e}")
+            return {
+                "total_tokens": 0,
+                "model_limit": self.get_model_context_limit(),
+                "context_used_percent": 0,
+                "rate_limit": self._rate_limiter.tokens_per_minute,
+                "rate_usage": self._rate_limiter.get_current_usage(),
+                "rate_used_percent": self._rate_limiter.get_usage_percentage(),
+                "error": str(e),
+            }
+
+    def _update_session_tokens(
+        self, tokens_used: int, session_id: Optional[str] = None
+    ) -> None:
+        """Update token count for the current session
+
+        Args:
+            tokens_used: Number of tokens used in this request
+            session_id: Optional session ID. If None, uses current session.
+        """
+        # For temporary sessions, we track in session state
+        if st.session_state.get("temporary_session", False) or not st.session_state.get(
+            "current_session_id"
+        ):
+            if "temp_session_tokens" not in st.session_state:
+                st.session_state.temp_session_tokens = 0
+
+            st.session_state.temp_session_tokens = tokens_used
+
+            # Log milestone achievements for temp session
+            if st.session_state.temp_session_tokens % 10_000 < tokens_used:
+                logger.info(
+                    f"Temporary session reached {st.session_state.temp_session_tokens:,} total tokens"
+                )
+
+                # Warn if approaching model limit
+                model_limit = self.get_model_context_limit()
+                usage_percent = (
+                    st.session_state.temp_session_tokens / model_limit
+                ) * 100
+                if usage_percent > 75:
+                    logger.warning(
+                        f"Temporary session is using {usage_percent:.1f}% "
+                        f"of model's context limit ({st.session_state.temp_session_tokens:,}/{model_limit:,})"
+                    )
+
+                    if usage_percent > 90:
+                        st.warning(
+                            f"⚠️ This conversation is using {usage_percent:.1f}% of the model's "
+                            f"context limit ({st.session_state.temp_session_tokens:,}/{model_limit:,} tokens). "
+                            f"Consider saving and starting a new chat soon."
+                        )
+
+            return
+
+        target_session_id = session_id or st.session_state.current_session_id
+
+        try:
+            # Get the session from storage
+            session = self._storage.get_session(target_session_id)
+
+            # If total_tokens_used doesn't exist yet, add it
+            if not hasattr(session, "total_tokens_used"):
+                session.total_tokens_used = 0
+
+            # Update token count
+            session.total_tokens_used += tokens_used
+
+            # Save updated session
+            self._storage.update_session(session)
+
+            # Log milestone achievements
+            if session.total_tokens_used % 10_000 < tokens_used:
+                logger.info(
+                    f"Session '{session.title}' reached {session.total_tokens_used:,} total tokens"
+                )
+
+                # Warn if approaching model limit
+                model_limit = self.get_model_context_limit()
+                usage_percent = (session.total_tokens_used / model_limit) * 100
+                if usage_percent > 75:
+                    logger.warning(
+                        f"Session '{session.title}' is using {usage_percent:.1f}% "
+                        f"of model's context limit ({session.total_tokens_used:,}/{model_limit:,})"
+                    )
+
+                    if usage_percent > 90:
+                        st.warning(
+                            f"⚠️ This conversation is using {usage_percent:.1f}% of the model's "
+                            f"context limit ({session.total_tokens_used:,}/{model_limit:,} tokens). "
+                            f"Consider starting a new chat soon."
+                        )
+
+        except Exception as e:
+            logger.warning(f"Failed to update session token count: {e}")
 
     def stream(self, input: List[BaseMessage]) -> Iterator[BaseMessageChunk]:
         """Stream a response with rate limiting
@@ -266,22 +480,45 @@ class BedrockLLM(LLMInterface):
                     usage_data = chunk.usage_metadata
 
         finally:
-            # After stream completes (or errors), update rate limiter with actual usage
-            actual_tokens = self._extract_token_usage(usage_data)
+            # After stream completes (or errors), extract and update token usage
+            token_usage = self._extract_token_usage(usage_data)
 
             # If we couldn't get actual token count, use our estimate
-            if actual_tokens == 0:
+            if token_usage["total_tokens"] == 0:
                 logger.warning("No token usage data available, using estimate")
-                actual_tokens = estimated_total
+                token_usage = {
+                    "input_tokens": estimated_input_tokens,
+                    "output_tokens": estimated_total - estimated_input_tokens,
+                    "total_tokens": estimated_total,
+                }
 
-            # Update rate limiter with actual token usage
-            self._rate_limiter.update_usage(actual_tokens)
+            # Update rate limiter with total tokens
+            self._rate_limiter.update_usage(token_usage["total_tokens"])
 
-            # Log current usage
+            # Update session token tracking
+            self._update_session_tokens(
+                tokens_used=token_usage["total_tokens"],
+                session_id=st.session_state.current_session_id,
+            )
+
+            # Log token usage details
+            session_type = (
+                "Temporary"
+                if st.session_state.get("temporary_session", False)
+                else "Session"
+            )
+            session_tokens = (
+                st.session_state.temp_session_tokens
+                if st.session_state.get("temporary_session", False)
+                else self.get_token_usage_stats().get("total_tokens", 0)
+            )
+
             logger.info(
-                f"Request used {actual_tokens} tokens. Current usage (last 1 min window): "
-                f"{self._rate_limiter.get_current_usage()} tokens "
-                f"({self._rate_limiter.get_usage_percentage():.1f}% of limit)"
+                f"Request used {token_usage['total_tokens']:,} tokens "
+                f"({token_usage['input_tokens']:,} input, {token_usage['output_tokens']:,} output). "
+                f"{session_type} total: {session_tokens:,}. "
+                f"Rate usage: {self._rate_limiter.get_current_usage():,}/{self._rate_limiter.tokens_per_minute:,} tokens/min "
+                f"({self._rate_limiter.get_usage_percentage():.1f}%)"
             )
 
     def invoke(self, input: List[BaseMessage]) -> BaseMessage:
@@ -307,24 +544,49 @@ class BedrockLLM(LLMInterface):
         # Get response
         response = self._llm.invoke(input=input)
 
-        # Extract actual token usage if available
-        actual_tokens = 0
+        # Extract token usage
+        usage_data = None
         if hasattr(response, "usage_metadata") and response.usage_metadata:
-            actual_tokens = self._extract_token_usage(response.usage_metadata)
+            usage_data = response.usage_metadata
 
-        # If we couldn't get actual usage, use our estimate
-        if actual_tokens == 0:
+        token_usage = self._extract_token_usage(usage_data)
+
+        # If we couldn't get actual token count, use our estimate
+        if token_usage["total_tokens"] == 0:
             logger.warning("No token usage data available, using estimate")
-            actual_tokens = estimated_total
+            token_usage = {
+                "input_tokens": estimated_input_tokens,
+                "output_tokens": estimated_total - estimated_input_tokens,
+                "total_tokens": estimated_total,
+            }
 
         # Update rate limiter
-        self._rate_limiter.update_usage(actual_tokens)
+        self._rate_limiter.update_usage(token_usage["total_tokens"])
 
-        # Log current usage
+        # Update session token tracking
+        self._update_session_tokens(
+            tokens_used=token_usage["total_tokens"],
+            session_id=st.session_state.current_session_id,
+        )
+
+        # Log token usage
+        session_type = (
+            "Temporary"
+            if st.session_state.get("temporary_session", False)
+            else "Session"
+        )
+        session_tokens = (
+            st.session_state.temp_session_tokens
+            if st.session_state.get("temporary_session", False)
+            else self.get_token_usage_stats().get("total_tokens", 0)
+        )
+
         logger.info(
-            f"Request used {actual_tokens} tokens. Current usage: "
-            f"{self._rate_limiter.get_current_usage()} tokens "
-            f"({self._rate_limiter.get_usage_percentage():.1f}% of limit)"
+            f"Request used {token_usage['total_tokens']:,} tokens "
+            f"({token_usage['input_tokens']:,} input, {token_usage['output_tokens']:,} output). "
+            f"{session_type} total: {session_tokens:,}. "
+            f"Rate usage: {self._rate_limiter.get_current_usage():,}/{self._rate_limiter.tokens_per_minute:,} tokens/min "
+            f"({self._rate_limiter.get_usage_percentage():.1f}%)"
         )
 
         return response

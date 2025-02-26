@@ -344,7 +344,11 @@ class ChatInterface:
                             title: str = self.llm.generate_session_title()
                             config = self.llm.get_config().model_copy(deep=True)
                             new_session: ChatSession = ChatSession(
-                                title=title, config=config
+                                title=title,
+                                config=config,
+                                total_tokens_used=st.session_state.get(
+                                    "temp_session_tokens", 0
+                                ),
                             )
                             st.session_state.current_session_id = new_session.session_id
                             self.storage.store_session(new_session)

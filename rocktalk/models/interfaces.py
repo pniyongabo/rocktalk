@@ -389,6 +389,7 @@ class ChatSession(BaseModel):
     created_at: datetime = Field(default_factory=partial(datetime.now, timezone.utc))
     last_active: datetime = Field(default_factory=partial(datetime.now, timezone.utc))
     is_private: bool = False
+    total_tokens_used: int = 0
 
 
 class ChatExport(BaseModel):

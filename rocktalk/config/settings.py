@@ -1,10 +1,11 @@
+import json
 import logging
 import time
 from datetime import datetime, timezone
 from enum import StrEnum
 from functools import partial
 from typing import Any, Callable, List, Optional, Tuple
-import json
+
 import pandas as pd
 import streamlit as st
 from models.interfaces import (
@@ -542,7 +543,9 @@ class SettingsManager:
                 # Save the session to storage
                 config = self.llm.get_config().model_copy(deep=True)
                 new_session = ChatSession(
-                    title=st.session_state.temp_session_title, config=config
+                    title=st.session_state.temp_session_title,
+                    config=config,
+                    total_tokens_used=st.session_state.get("temp_session_tokens", 0),
                 )
                 st.session_state.current_session_id = new_session.session_id
                 self.storage.store_session(new_session)

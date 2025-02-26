@@ -133,9 +133,18 @@ class ParameterControls:
         elif parameter == "rate_limit":
             if action == "clear":
                 # Get default from field definition
-                default_value = (
-                    LLMConfig.model_fields.get("rate_limit").default or 10_000_000
-                )
+                rate_limit_field = LLMConfig.model_fields["rate_limit"]
+                default_value = 10_00_000  # Default fallback
+                if hasattr(rate_limit_field, "default"):
+                    if callable(rate_limit_field.default):
+                        # Handle default_factory
+                        try:
+                            default_value = rate_limit_field.default()
+                        except:
+                            pass
+                    else:
+                        default_value = rate_limit_field.default
+
                 logger.debug(
                     f"Updating rate_limit to {default_value} from {st.session_state.temp_llm_config.rate_limit}"
                 )
@@ -497,59 +506,91 @@ class ParameterControls:
             elif hasattr(validator, "le"):
                 max_value = validator.le
 
-        # Try to get default from the field
-        if hasattr(rate_limit_field, "default"):
-            if callable(rate_limit_field.default):
-                # Handle default_factory
-                try:
-                    default_value = rate_limit_field.default()
-                except:
-                    pass
-            else:
-                default_value = rate_limit_field.default
-
-        key = "parameter_control_rate_limit"
-        col1, col2 = st.columns([3, 1])
-
-        with col1:
-            st.number_input(
-                "API Rate Limit (tokens/minute)",
-                min_value=min_value,
-                max_value=max_value,
-                value=config.rate_limit,
-                step=min(
-                    10000, max(1000, min_value // 10)
-                ),  # Dynamic step based on range
-                format="%d",
-                help=(
-                    f"Maximum tokens per minute to process through the API. "
-                    f"Valid range: {min_value:,} - {max_value:,}, default: {default_value:,}"
-                    if self.show_help
-                    else None
-                ),
-                on_change=self.control_on_change,
-                key=key,
-                kwargs=dict(key=key, parameter="rate_limit"),
-            )
-
-        # Show current usage if available in an LLM instance
         if hasattr(st.session_state, "llm") and hasattr(
             st.session_state.llm, "_rate_limiter"
         ):
-            with col2:
-                try:
-                    usage = st.session_state.llm._rate_limiter.get_current_usage()
-                    percentage = (
-                        st.session_state.llm._rate_limiter.get_usage_percentage()
-                    )
-                    st.metric(
-                        "Current Usage",
-                        f"{usage:,}",
-                        f"{percentage:.1f}%",
-                        delta_color="inverse",
-                    )
-                except Exception:
-                    pass
+            try:
+                rate_limiter = st.session_state.llm._rate_limiter
+                usage = rate_limiter.get_current_usage()
+                percentage = rate_limiter.get_usage_percentage()
+
+                # Try to get default from the field
+                if hasattr(rate_limit_field, "default"):
+                    if callable(rate_limit_field.default):
+                        # Handle default_factory
+                        try:
+                            default_value = rate_limit_field.default()
+                        except:
+                            pass
+                    else:
+                        default_value = rate_limit_field.default
+
+                key = "parameter_control_rate_limit"
+
+                st.metric(
+                    "Current Rate",
+                    f"{usage:,}/min",
+                    f"{percentage:.1f}%",
+                    delta_color="inverse" if percentage > 75 else "normal",
+                )
+                st.number_input(
+                    "API Rate Limit (tokens/minute)",
+                    min_value=min_value,
+                    max_value=max_value,
+                    value=config.rate_limit,
+                    step=min(
+                        10000, max(1000, min_value // 10)
+                    ),  # Dynamic step based on range
+                    format="%d",
+                    help=(
+                        f"Maximum tokens per minute to process through the API. "
+                        f"Valid range: {min_value:,} - {max_value:,}, default: {default_value:,}"
+                        if self.show_help
+                        else None
+                    ),
+                    on_change=self.control_on_change,
+                    key=key,
+                    kwargs=dict(key=key, parameter="rate_limit"),
+                )
+            except Exception as e:
+                logger.debug(f"Error displaying rate limit info: {e}")
+
+    def render_token_usage_stats(self, config: LLMConfig) -> None:
+        """Render token usage statistics"""
+        # For session-specific view, use the session data directly
+        if self.session:
+            total_tokens = getattr(self.session, "total_tokens_used", 0)
+            if total_tokens == 0:
+                return  # No usage to display
+
+            # Get model context limit from MODEL_CONTEXT_LIMITS
+            from models.llm import MODEL_CONTEXT_LIMITS
+
+            model_id = config.bedrock_model_id
+            model_limit = MODEL_CONTEXT_LIMITS.get(
+                model_id, MODEL_CONTEXT_LIMITS["default"]
+            )
+            context_percent = (total_tokens / model_limit * 100) if model_limit else 0
+
+            st.metric(
+                "Tokens Used",
+                f"{total_tokens:,}",
+                f"{context_percent:.1f}%",
+                delta_color="inverse" if context_percent > 75 else "normal",
+            )
+
+            # Display token usage information
+            st.caption(
+                f"Context window usage ({total_tokens:,}/{model_limit:,} tokens)"
+            )
+            st.progress(min(context_percent / 100, 1.0))
+
+            if context_percent > 90:
+                st.warning("⚠️ Approaching context limit. Consider starting a new chat.")
+
+            st.divider()
+
+            return
 
     @staticmethod
     def render_model_selector() -> None:
@@ -633,8 +674,13 @@ class ParameterControls:
         # Stop Sequences
         self.render_stop_sequences(config)
 
-        # Rate Limit
-        self.render_rate_limit(config)
+        # Put token usage stats in an expander to save space
+        with st.expander("Token Usage & Rate Limits", expanded=False):
+            # Display token usage stats
+            self.render_token_usage_stats(config)
+
+            # Rate Limit control
+            self.render_rate_limit(config)
 
         if self.show_json:
             with st.expander("View as JSON"):
