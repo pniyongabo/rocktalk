@@ -130,6 +130,24 @@ class ParameterControls:
                     f"Updating system to {new_val} from {st.session_state.temp_llm_config.system}"
                 )
                 st.session_state.temp_llm_config.system = new_val
+        elif parameter == "rate_limit":
+            if action == "clear":
+                # Get default from field definition
+                default_value = (
+                    LLMConfig.model_fields.get("rate_limit").default or 10_000_000
+                )
+                logger.debug(
+                    f"Updating rate_limit to {default_value} from {st.session_state.temp_llm_config.rate_limit}"
+                )
+                st.session_state.temp_llm_config.rate_limit = default_value
+                return
+            else:
+                assert key is not None, "Key must be provided for rate_limit control"
+                new_val = int(value or st.session_state[key])
+                logger.debug(
+                    f"Updating rate_limit to {new_val} from {st.session_state.temp_llm_config.rate_limit}"
+                )
+                st.session_state.temp_llm_config.rate_limit = new_val
 
     def render_system_prompt(self, config: LLMConfig) -> None:
         """Render system prompt control or view"""
@@ -453,6 +471,86 @@ class ParameterControls:
                                 ),
                             )
 
+    def render_rate_limit(self, config: LLMConfig) -> None:
+        """Render rate limit control or view"""
+        # Get min and max values from LLMConfig field definition
+        rate_limit_field = LLMConfig.model_fields["rate_limit"]
+
+        # Access constraints using the metadata
+        field_info = rate_limit_field.metadata
+
+        # Extract constraints safely
+        min_value = 200  # Default fallback
+        max_value = 10_000_000  # Default fallback
+        default_value = 800_000  # Default fallback
+
+        # Check for gt/ge and lt/le constraints in different possible locations
+        for validator in field_info:
+            # print(validator)
+            if hasattr(validator, "gt"):
+                min_value = validator.gt + 1
+            elif hasattr(validator, "ge"):
+                min_value = validator.ge
+
+            if hasattr(validator, "lt"):
+                max_value = validator.lt - 1
+            elif hasattr(validator, "le"):
+                max_value = validator.le
+
+        # Try to get default from the field
+        if hasattr(rate_limit_field, "default"):
+            if callable(rate_limit_field.default):
+                # Handle default_factory
+                try:
+                    default_value = rate_limit_field.default()
+                except:
+                    pass
+            else:
+                default_value = rate_limit_field.default
+
+        key = "parameter_control_rate_limit"
+        col1, col2 = st.columns([3, 1])
+
+        with col1:
+            st.number_input(
+                "API Rate Limit (tokens/minute)",
+                min_value=min_value,
+                max_value=max_value,
+                value=config.rate_limit,
+                step=min(
+                    10000, max(1000, min_value // 10)
+                ),  # Dynamic step based on range
+                format="%d",
+                help=(
+                    f"Maximum tokens per minute to process through the API. "
+                    f"Valid range: {min_value:,} - {max_value:,}, default: {default_value:,}"
+                    if self.show_help
+                    else None
+                ),
+                on_change=self.control_on_change,
+                key=key,
+                kwargs=dict(key=key, parameter="rate_limit"),
+            )
+
+        # Show current usage if available in an LLM instance
+        if hasattr(st.session_state, "llm") and hasattr(
+            st.session_state.llm, "_rate_limiter"
+        ):
+            with col2:
+                try:
+                    usage = st.session_state.llm._rate_limiter.get_current_usage()
+                    percentage = (
+                        st.session_state.llm._rate_limiter.get_usage_percentage()
+                    )
+                    st.metric(
+                        "Current Usage",
+                        f"{usage:,}",
+                        f"{percentage:.1f}%",
+                        delta_color="inverse",
+                    )
+                except Exception:
+                    pass
+
     @staticmethod
     def render_model_selector() -> None:
         """Render model selection UI"""
@@ -534,6 +632,9 @@ class ParameterControls:
 
         # Stop Sequences
         self.render_stop_sequences(config)
+
+        # Rate Limit
+        self.render_rate_limit(config)
 
         if self.show_json:
             with st.expander("View as JSON"):

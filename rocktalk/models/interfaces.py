@@ -85,6 +85,12 @@ class LLMConfig(BaseModel):
     parameters: LLMParameters
     stop_sequences: List[str] = Field(default_factory=list)
     system: Optional[str] = None
+    rate_limit: int = Field(
+        default=800_000,  # https://docs.aws.amazon.com/general/latest/gr/bedrock.html
+        description="Maximum tokens per minute to process",
+        ge=100,  # Minimum reasonable limit
+        le=10_000_000,  # Maximum reasonable limit
+    )
 
 
 class TurnState(Enum):

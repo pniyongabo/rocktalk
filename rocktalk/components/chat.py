@@ -254,6 +254,7 @@ class ChatInterface:
                             "latency_ms": latency,
                             "stop_reason": stop_reason,
                         }
+                        logger.debug(f"LLM response: {metadata}")
                     except Exception as e:
                         logger.error(f"Error in LLM stream: {e}")
                         metadata = {
@@ -280,6 +281,7 @@ class ChatInterface:
                                 use_container_width=True,
                             )
                             if retry_clicked:
+                                # If "Retry" was clicked, we have already rerun the script, so the code below will not execute.
                                 st.session_state.turn_state = TurnState.AI_TURN
                                 logger.info("Retrying AI response")
                                 # Optionally rerun the script to immediately process the AI response
@@ -291,15 +293,12 @@ class ChatInterface:
                                 use_container_width=True,
                             )
                             if cancel_clicked:
+                                # If "Cancel" was clicked, we need the code to continue to handle the cancellation.
                                 st.session_state.stop_chat_stream = True
                                 logger.info("Cancelling AI response, stopping stream")
                                 # Do not return here; let the code continue to handle the cancellation.
 
                         st.markdown("")  # added to help with autoscroller
-
-                        # If "Retry" was clicked, we have already rerun the script, so the code below will not execute.
-
-                        # If "Cancel" was clicked, we need the code to continue to handle the cancellation.
 
                         # If neither button was clicked, we return to wait for the user's action.
                         if not (retry_clicked or cancel_clicked):

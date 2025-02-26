@@ -1,4 +1,5 @@
 import os
+import time
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterator, List, Optional
@@ -12,6 +13,7 @@ from utils.log import logger
 from utils.streamlit_utils import escape_dollarsign
 
 from .interfaces import ChatMessage, ChatSession, LLMConfig
+from .rate_limiter import TokenRateLimiter
 from .storage_interface import StorageInterface
 
 
@@ -113,6 +115,31 @@ class LLMInterface(ABC):
 
 
 class BedrockLLM(LLMInterface):
+    def _init_rate_limiter(self) -> None:
+        """Initialize the rate limiter using config or environment values"""
+        # Get rate limit from config or environment
+        config_rate_limit = self.get_config().rate_limit
+        env_rate_limit = os.getenv("BEDROCK_TOKENS_PER_MINUTE")
+
+        # Environment variable overrides config if present
+        if env_rate_limit:
+            try:
+                tokens_per_minute = int(env_rate_limit)
+                logger.debug(
+                    f"Using environment token rate limit: {tokens_per_minute} tokens/min"
+                )
+            except ValueError:
+                logger.warning(
+                    f"Invalid BEDROCK_TOKENS_PER_MINUTE value: {env_rate_limit}"
+                )
+                tokens_per_minute = config_rate_limit
+        else:
+            tokens_per_minute = config_rate_limit
+            logger.debug(
+                f"Using configured token rate limit: {tokens_per_minute} tokens/min"
+            )
+
+        self._rate_limiter = TokenRateLimiter(tokens_per_minute=tokens_per_minute)
 
     def update_config(self, config: Optional[LLMConfig] = None) -> None:
         if config:
@@ -160,9 +187,144 @@ class BedrockLLM(LLMInterface):
                 top_p=self._config.parameters.top_p,
                 additional_model_request_fields=additional_model_request_fields,
             )
+        self._init_rate_limiter()  # Re-initialize rate limiter when config changes
 
-    def stream(self, input) -> Iterator[BaseMessageChunk]:
-        return self._llm.stream(input=input)
+    def _extract_token_usage(self, usage_data: Optional[Dict]) -> int:
+        """Extract token usage from Bedrock response metadata
 
-    def invoke(self, input) -> BaseMessage:
-        return self._llm.invoke(input=input)
+        Args:
+            usage_data: Usage metadata from Bedrock response
+
+        Returns:
+            Total token count (input + output)
+        """
+        if not usage_data:
+            return 0
+
+        input_tokens = usage_data.get("input_tokens", 0)
+        output_tokens = usage_data.get("output_tokens", 0)
+
+        # Some Bedrock models use different keys
+        if input_tokens == 0:
+            input_tokens = usage_data.get("promptTokenCount", 0)
+        if output_tokens == 0:
+            output_tokens = usage_data.get("completionTokenCount", 0)
+
+        # Return total tokens
+        return input_tokens + output_tokens
+
+    def _estimate_tokens(self, messages: List[BaseMessage]) -> int:
+        """Estimate the number of tokens for input messages.
+
+        Args:
+            messages: The input messages
+
+        Returns:
+            Estimated input token count
+        """
+        # Simple estimation: ~4 chars per token
+        input_text = " ".join(str(msg.content) for msg in messages)
+        input_tokens = len(input_text) // 4
+
+        # Add safety margin (30%)
+        return int(input_tokens * 1.3)
+
+    def stream(self, input: List[BaseMessage]) -> Iterator[BaseMessageChunk]:
+        """Stream a response with rate limiting
+
+        Uses estimated tokens for initial rate limiting check, but updates
+        with actual token counts from the API response once available.
+        """
+        # Estimate token usage for input
+        estimated_input_tokens = self._estimate_tokens(input)
+
+        # Check rate limit with a buffer for expected output tokens
+        # Assume roughly similar number of output tokens as input
+        estimated_total = estimated_input_tokens * 2
+        is_allowed, wait_time = self._rate_limiter.check_rate_limit(estimated_total)
+
+        if not is_allowed:
+            # Inform user about rate limiting
+            wait_time_rounded = round(wait_time, 1)
+            usage_percent = self._rate_limiter.get_usage_percentage()
+            message = f"Rate limit {self._rate_limiter.tokens_per_minute} tokens/min reached ({usage_percent:.1f}% used). Please wait {wait_time_rounded} seconds."
+            logger.warning(message)
+            st.warning(message)
+            with st.spinner("Waiting for..", show_time=True):
+                st.markdown("")
+                time.sleep(wait_time)
+
+        # Process the stream
+        usage_data = None
+        try:
+            # Yield chunks from the LLM stream
+            for chunk in self._llm.stream(input=input):
+                yield chunk
+
+                # Extract usage data if available
+                if hasattr(chunk, "usage_metadata") and chunk.usage_metadata:
+                    usage_data = chunk.usage_metadata
+
+        finally:
+            # After stream completes (or errors), update rate limiter with actual usage
+            actual_tokens = self._extract_token_usage(usage_data)
+
+            # If we couldn't get actual token count, use our estimate
+            if actual_tokens == 0:
+                logger.warning("No token usage data available, using estimate")
+                actual_tokens = estimated_total
+
+            # Update rate limiter with actual token usage
+            self._rate_limiter.update_usage(actual_tokens)
+
+            # Log current usage
+            logger.info(
+                f"Request used {actual_tokens} tokens. Current usage (last 1 min window): "
+                f"{self._rate_limiter.get_current_usage()} tokens "
+                f"({self._rate_limiter.get_usage_percentage():.1f}% of limit)"
+            )
+
+    def invoke(self, input: List[BaseMessage]) -> BaseMessage:
+        """Invoke the model with rate limiting"""
+        # Estimate token usage
+        estimated_input_tokens = self._estimate_tokens(input)
+        estimated_total = estimated_input_tokens * 2  # Assume output similar to input
+
+        # Check rate limit
+        is_allowed, wait_time = self._rate_limiter.check_rate_limit(estimated_total)
+
+        if not is_allowed:
+            # Inform user about rate limiting
+            wait_time_rounded = round(wait_time, 1)
+            usage_percent = self._rate_limiter.get_usage_percentage()
+            message = f"Rate limit {self._rate_limiter.tokens_per_minute} tokens/min reached ({usage_percent:.1f}% used). Please wait {wait_time_rounded} seconds."
+            logger.warning(message)
+            st.warning(message)
+            with st.spinner("Waiting for..", show_time=True):
+                st.markdown("")
+                time.sleep(wait_time)
+
+        # Get response
+        response = self._llm.invoke(input=input)
+
+        # Extract actual token usage if available
+        actual_tokens = 0
+        if hasattr(response, "usage_metadata") and response.usage_metadata:
+            actual_tokens = self._extract_token_usage(response.usage_metadata)
+
+        # If we couldn't get actual usage, use our estimate
+        if actual_tokens == 0:
+            logger.warning("No token usage data available, using estimate")
+            actual_tokens = estimated_total
+
+        # Update rate limiter
+        self._rate_limiter.update_usage(actual_tokens)
+
+        # Log current usage
+        logger.info(
+            f"Request used {actual_tokens} tokens. Current usage: "
+            f"{self._rate_limiter.get_current_usage()} tokens "
+            f"({self._rate_limiter.get_usage_percentage():.1f}% of limit)"
+        )
+
+        return response
