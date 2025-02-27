@@ -48,7 +48,10 @@ class TestDataGenerator:
             ],
             "casual_chat": [
                 ("user", "How's your day going?"),
-                ("assistant", "I'm functioning well! How can I help you today?"),
+                (
+                    "assistant",
+                    "I'm functioning well! How can I help you today?",
+                ),
                 ("user", "Just wanted to chat"),
                 (
                     "assistant",
@@ -57,7 +60,10 @@ class TestDataGenerator:
             ],
             "book_recommendation": [
                 ("user", "Can you recommend a good sci-fi book?"),
-                ("assistant", "Have you read 'Project Hail Mary' by Andy Weir?"),
+                (
+                    "assistant",
+                    "Have you read 'Project Hail Mary' by Andy Weir?",
+                ),
                 ("user", "No, what's it about?"),
                 (
                     "assistant",
@@ -139,7 +145,7 @@ class TestDataGenerator:
                 # Add messages with timestamps spaced a few minutes apart
                 message_time = base_datetime
                 for idx, (role, content) in enumerate(conversation):
-                    message = ChatMessage(
+                    message = ChatMessage.create(
                         session_id=session.session_id,
                         role=role,
                         content=content,
@@ -153,7 +159,8 @@ class TestDataGenerator:
 
 
 def create_sample_database(
-    reference_date: datetime | None = None, db_path: str = "test_chat_database.db"
+    reference_date: datetime | None = None,
+    db_path: str = "test_chat_database.db",
 ) -> SQLiteChatStorage:
     """
     Convenience function to create a sample database

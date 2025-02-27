@@ -57,7 +57,7 @@ def copy_to_clipboard(input_key: str):
         try {{
             const parentDoc = window.parent.document;
             const stInput = parentDoc.querySelector('.st-key-{input_key} input');
-            
+
             if (!stInput) {{
                 console.error('Input element not found');
                 return;
@@ -90,33 +90,33 @@ def copy_to_clipboard(input_key: str):
             textarea.value = text;
             textarea.style.position = 'fixed';
             textarea.style.opacity = '0';
-            
+
             parentDoc.body.appendChild(textarea);
             textarea.focus();
             textarea.select();
-            
+
             try {{
                 parentDoc.execCommand('copy');
                 console.log('Text copied using fallback method');
             }} catch (execErr) {{
                 console.error('execCommand failed:', execErr);
             }}
-            
+
             parentDoc.body.removeChild(textarea);
         }} catch (err) {{
             console.error('Fallback copy failed:', err);
-            
+
             // Last resort fallback
             try {{
                 const tempInput = parentDoc.createElement('input');
                 tempInput.value = text;
                 tempInput.style.position = 'fixed';
                 tempInput.style.opacity = '0';
-                
+
                 parentDoc.body.appendChild(tempInput);
                 tempInput.select();
                 tempInput.setSelectionRange(0, 99999);
-                
+
                 parentDoc.execCommand('copy');
                 parentDoc.body.removeChild(tempInput);
                 console.log('Text copied using last resort method');

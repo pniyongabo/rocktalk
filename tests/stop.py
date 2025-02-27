@@ -1,5 +1,4 @@
 import base64
-from dataclasses import dataclass
 from io import BytesIO
 from typing import List
 
@@ -8,20 +7,20 @@ from PIL import Image
 from streamlit_chat_prompt import ImageData, PromptReturn, prompt
 from streamlit_float import float_css_helper, float_init
 
+from rocktalk.models.interfaces import ChatMessage
+
 float_init()
 
 st.title("streamlit-chat-prompt")
 
 
-@dataclass
-class ChatMessage:
-    role: str
-    content: str | PromptReturn
-
-
 if "messages" not in st.session_state:
     messages: List[ChatMessage] = [
-        ChatMessage(role="assistant", content="Hi there! What should we chat about?")
+        ChatMessage.create(
+            role="assistant",
+            content="Hi there! What should we chat about?",
+            index=len(st.session_state.messages),
+        )
     ]
     st.session_state.messages = messages
 
@@ -72,7 +71,8 @@ with st.sidebar:
         dialog()
 
     if st.button(
-        "Dialog Prompt with Default Value", key=f"dialog_prompt_with_default_button"
+        "Dialog Prompt with Default Value",
+        key=f"dialog_prompt_with_default_button",
     ):
         with open("example_images/vangogh.png", "rb") as f:
             image_data = f.read()
@@ -82,7 +82,11 @@ with st.sidebar:
                 default_input=PromptReturn(
                     text="This is a test message with an image",
                     images=[
-                        ImageData(data=base64_image, type="image/png", format="base64")
+                        ImageData(
+                            data=base64_image,
+                            type="image/png",
+                            format="base64",
+                        )
                     ],
                 ),
                 key="dialog_with_default",
@@ -126,10 +130,18 @@ with wrapper:
 
         if prompt_return:
             st.session_state.messages.append(
-                ChatMessage(role="user", content=prompt_return)
+                ChatMessage.create(
+                    role="user",
+                    content=prompt_return,
+                    index=len(st.session_state.messages),
+                )
             )
             st.session_state.messages.append(
-                ChatMessage(role="assistant", content=f"Echo: {prompt_return.text}")
+                ChatMessage.create(
+                    role="assistant",
+                    content=f"Echo: {prompt_return.text}",
+                    index=len(st.session_state.messages),
+                )
             )
             st.rerun()
 
