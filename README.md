@@ -21,6 +21,9 @@
     - [Working with Templates](#working-with-templates)
     - [Search Features](#search-features)
     - [Keyboard Shortcuts](#keyboard-shortcuts)
+  - [Advanced Features](#advanced-features)
+    - [Extended Thinking with Claude 3.7](#extended-thinking-with-claude-37)
+    - [Usage Guidelines and Limits](#usage-guidelines-and-limits)
   - [Troubleshooting](#troubleshooting)
   - [Advanced Setup](#advanced-setup)
     - [File Locations](#file-locations)
@@ -48,6 +51,7 @@ This project implements RockTalk, a ChatGPT-like chatbot webapp using Streamlit 
 - 📚 Complete session management with import/export
 - ⏳ Temporary sessions for quick, unsaved interactions
 - ⚙️ Fine-grained control over LLM parameters
+- 🧠 Extended thinking support for Claude 3.7 Sonnet
 
 ## Getting Started
 
@@ -137,6 +141,57 @@ This project implements RockTalk, a ChatGPT-like chatbot webapp using Streamlit 
 - Enter : Send message.
 - ⌘/⊞ + Enter : Add new line.
 
+## Advanced Features
+
+### Extended Thinking with Claude 3.7
+
+RockTalk supports Claude 3.7 Sonnet's extended thinking capability, allowing you to see the model's step-by-step reasoning process:
+
+- **How it works**: Claude shows its internal reasoning before providing a final response, making its problem-solving process transparent and verifiable.
+
+- **Setup**:
+  1. Select a Claude 3.7 Sonnet model in session settings
+  2. Enable "Extended Thinking"
+  3. Set your thinking budget (1,024-128,000 tokens)
+
+- **Benefits**:
+  - See step-by-step problem-solving logic
+  - Improved responses for complex tasks
+  - Verify reasoning and catch potential errors
+
+- **Important Notes**:
+  - Temperature, top_p, and top_k settings are disabled when using extended thinking
+  - Thinking tokens are billed as output tokens
+  - Larger thinking budgets may improve response quality but increase costs
+
+### Usage Guidelines and Limits
+
+Consider these factors when using extended thinking:
+
+- **Costs and Token Usage**:
+  - Thinking tokens count as output tokens for billing
+  - Each response with extended thinking uses significantly more tokens
+  - Monitor usage in session settings panel
+
+- **Recommended Token Budgets**:
+  
+  | Task Complexity | Token Budget   | Examples                          |
+  |----------------|---------------|-----------------------------------|
+  | Simple         | 1,024-4,000   | Basic questions, clarifications   |
+  | Moderate       | 4,000-16,000  | Analysis, problem-solving         |
+  | Complex        | 16,000-32,000 | Research, multi-step reasoning    |
+
+- **Rate Limits and Performance**:
+  - Default rate limit: 800,000 tokens per minute
+  - Extended thinking responses take longer to generate
+  - Use streaming mode to see reasoning in real-time
+  - Rate limits can be configured in settings
+
+- **Optimization**:
+  - Previous thinking blocks don't count toward context window
+  - Token budget is "up to" - model may use less if appropriate
+  - Monitor token usage in session settings to optimize costs
+
 ## Troubleshooting
 
 - AWS credentials setup.
@@ -217,6 +272,7 @@ RockTalk implements a flexible template system that allows users to save and reu
   - Task-specific configurations.
   - Team-wide standardized settings.
   - Experimental configurations.
+  - Extended thinking templates for complex reasoning tasks.
 
 ### Implementation Status
 
@@ -228,9 +284,10 @@ RockTalk implements a flexible template system that allows users to save and reu
 6. ✅ Develop LLM settings customization
 7. 🚧 Integrate support for various input types
 8. ✅ Implement advanced features (editing, multiple sessions)
-9. 🚧 Optimize performance and user experience
-10. 🚧 Test and debug
-11. ⏳ Deploy RockTalk webapp
+9. ✅ Add extended thinking support for Claude 3.7 models
+10. 🚧 Optimize performance and user experience
+11. 🚧 Test and debug
+12. ⏳ Deploy RockTalk webapp
 
 ### Features
 
@@ -242,75 +299,37 @@ RockTalk implements a flexible template system that allows users to save and reu
    - Copy message functionality.
    - "Trim History" option to remove all session messages after selected message.
 
-2. Advanced search capabilities:
-     - Keyword search across all sessions and messages.
-     - Filter by titles and/or content.
-     - Date range filtering.
-     - Configurable search logic (match ALL terms or ANY term).
-     - Batch operations on search results:
-       - Select all/clear selections.
-       - Export multiple sessions.
-       - Bulk visibility toggle (show/hide from session list).
-       - Batch delete with confirmation.
-     - Rich search results:
-       - Message previews with search term context.
-       - Quick access to session settings and chat.
-       - Session metadata (last active, visibility status).
-     - Search result actions:
-       - Load session.
-       - Export session.
-       - Access session settings.
-     - Support for wildcard searches using *.
+2. Advanced search capabilities ✅
+   - Keyword search across all sessions and messages.
+   - Filter by titles and/or content.
+   - Date range filtering.
+   - Configurable search logic (match ALL terms or ANY term).
+   - Batch operations on search results.
+   - Rich search results with message previews.
 
 3. Comprehensive Session Management ✅
-   - Session Organization:
-     - Active session pinned at top of sidebar.
-     - Chronologically grouped session history (Today, Yesterday, This Week, etc.).
-     - Session visibility control (hide from list while maintaining searchability).
-     - **Temporary Sessions**:
-       - Ability to create sessions that are not saved by default.
-       - Option to save temporary sessions if needed.
-   - Session Creation and Navigation:
-     - Quick new chat creation.
-     - Create from template option.
-     - Seamless session switching.
-     - Automatic session persistence.
-   - Session Customization:
-     - Auto-generated descriptive titles.
-     - AI-powered title regeneration.
-     - Manual title editing.
-     - Template-based configuration.
-     - Individual session settings.
-     - Visibility control.
-   - Session Management:
-     - Copy sessions to new session with options:
-       - Copy messages and/or settings.
-       - Custom naming.
-     - Import/Export capabilities:
-       - Single session export.
-       - Bulk session export.
-       - JSON format for portability.
-     - Session cleanup:
-       - Individual session deletion.
-       - Automatic cleanup of related messages.
+   - Session Organization with visibility control.
+   - Temporary Sessions for quick, unsaved interactions.
+   - Session Creation, Navigation, and Customization.
+   - Session Management with copy, import/export, and cleanup options.
 
 4. Chat Templates ✅
    - Create templates from existing sessions.
    - Save and load predefined configurations.
    - Custom template naming and descriptions.
    - Share configurations across sessions.
-   - Manage template library.
-   - Import/Export templates.
+   - Extended thinking templates for complex reasoning tasks.
 
 5. Edit previous chat messages within a session ✅
    - Edit any user message in history.
-   - Automatic regeneration of subsequent response (destroys original chat history after the user message).
+   - Automatic regeneration of subsequent response.
    - Stop and modify streaming responses.
 
 6. Customizable LLM settings ✅
    - Adjust model parameters (temperature, top_p, etc.).
-   - Model selection.
+   - Model selection with advanced provider filtering.
    - System prompt customization.
+   - Extended thinking settings for Claude 3.7.
    - Save configurations as templates.
 
 7. Support for multiple input types

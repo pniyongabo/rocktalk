@@ -5,14 +5,20 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Iterator, List, Optional
 
 import streamlit as st
-from langchain.schema import BaseMessage, HumanMessage
+from langchain.schema import AIMessage, BaseMessage, HumanMessage
 from langchain_aws import ChatBedrockConverse
 from langchain_core.messages.base import BaseMessageChunk
 from services.creds import get_cached_aws_credentials
 from utils.log import logger
 from utils.streamlit_utils import escape_dollarsign
 
-from .interfaces import ChatMessage, ChatSession, LLMConfig
+from .interfaces import (
+    ChatContent,
+    ChatContentItem,
+    ChatMessage,
+    ChatSession,
+    LLMConfig,
+)
 from .rate_limiter import TokenRateLimiter
 from .storage_interface import StorageInterface
 
@@ -50,6 +56,25 @@ MODEL_CONTEXT_LIMITS = {
 }
 
 
+def model_supports_thinking(model_id: str) -> bool:
+    """Check if a model supports extended thinking.
+
+    Args:
+        model_id: The Bedrock model identifier
+
+    Returns:
+        True if the model supports extended thinking
+    """
+    # Current models with thinking support
+    thinking_models = [
+        # Claude 3.7 models
+        "claude-3-7",
+        # Add future models here
+    ]
+
+    return any(model_type in model_id.lower() for model_type in thinking_models)
+
+
 class LLMInterface(ABC):
     _config: LLMConfig
     _llm: ChatBedrockConverse
@@ -64,7 +89,7 @@ class LLMInterface(ABC):
         self.update_config(config=config)
 
     @abstractmethod
-    def stream(self, input: List[BaseMessage]) -> Iterator[BaseMessageChunk]: ...
+    def stream(self, input: List[BaseMessage]) -> Iterator[Dict[str, Any]]: ...
     @abstractmethod
     def invoke(self, input: List[BaseMessage]) -> BaseMessage: ...
     @abstractmethod
@@ -135,6 +160,14 @@ class LLMInterface(ABC):
 
         if isinstance(title_content, str):
             title: str = escape_dollarsign(title_content.strip('" \n').strip())
+        elif isinstance(title_content, list):
+            # Extract text content from structured response
+            text_parts = []
+            for item in title_content:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    text_parts.append(item.get("text", ""))
+
+            title = escape_dollarsign("".join(text_parts).strip('" \n').strip())
         else:
             logger.warning(f"Unexpected generated title response: {title_content}")
             return f"Chat {datetime.now(timezone.utc)}"
@@ -185,9 +218,36 @@ class BedrockLLM(LLMInterface):
         return self._config
 
     def _update_llm(self) -> None:
-        additional_model_request_fields: Optional[Dict[str, Any]] = None
-        if self._config.parameters.top_k:
-            additional_model_request_fields = {"top_k": self._config.parameters.top_k}
+        additional_model_request_fields: Dict[str, Any] = {}
+
+        # Handle thinking parameters for Claude 3.7 Sonnet
+        if (
+            model_supports_thinking(self._config.bedrock_model_id)
+            and self._config.parameters.thinking.enabled
+        ):
+            # Add thinking parameters
+            additional_model_request_fields["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": self._config.parameters.thinking.budget_tokens,
+            }
+            # When thinking is enabled, we can't use temperature, top_p, or top_k
+            temperature = None
+            top_p = None
+            top_k = None
+            logger.info(
+                f"Extended thinking enabled with budget of {self._config.parameters.thinking.budget_tokens:,} tokens"
+            )
+        else:
+            # Non-Claude 3.7 models don't support thinking
+            temperature = self._config.parameters.temperature
+            top_p = self._config.parameters.top_p
+            top_k = self._config.parameters.top_k
+            if top_k is not None:
+                additional_model_request_fields["top_k"] = top_k
+            if self._config.parameters.thinking.enabled:
+                logger.warning(
+                    f"Extended thinking is only supported on Claude 3.7 models. Using model {self._config.bedrock_model_id} without thinking."
+                )
 
         creds = get_cached_aws_credentials()
         region_name = (
@@ -198,10 +258,10 @@ class BedrockLLM(LLMInterface):
             self._llm = ChatBedrockConverse(
                 region_name=region_name,
                 model=self._config.bedrock_model_id,
-                temperature=self._config.parameters.temperature,
+                temperature=temperature,
                 max_tokens=self._config.parameters.max_output_tokens,
                 stop=self._config.stop_sequences,
-                top_p=self._config.parameters.top_p,
+                top_p=top_p,
                 additional_model_request_fields=additional_model_request_fields,
                 aws_access_key_id=creds.aws_access_key_id,
                 aws_secret_access_key=creds.aws_secret_access_key,
@@ -214,10 +274,10 @@ class BedrockLLM(LLMInterface):
             self._llm = ChatBedrockConverse(
                 region_name=region_name,
                 model=self._config.bedrock_model_id,
-                temperature=self._config.parameters.temperature,
+                temperature=temperature,
                 max_tokens=self._config.parameters.max_output_tokens,
                 stop=self._config.stop_sequences,
-                top_p=self._config.parameters.top_p,
+                top_p=top_p,
                 additional_model_request_fields=additional_model_request_fields,
             )
         self._init_rate_limiter()  # Re-initialize rate limiter when config changes
@@ -443,18 +503,37 @@ class BedrockLLM(LLMInterface):
         except Exception as e:
             logger.warning(f"Failed to update session token count: {e}")
 
-    def stream(self, input: List[BaseMessage]) -> Iterator[BaseMessageChunk]:
-        """Stream a response with rate limiting
+    def stream(self, input: List[BaseMessage]) -> Iterator[Dict[str, Any]]:
+        """Stream a response with rate limiting, processing thinking blocks internally.
 
-        Uses estimated tokens for initial rate limiting check, but updates
-        with actual token counts from the API response once available.
+        This version yields simplified dictionaries for easy consumption by the UI:
+        {
+            "content": "text chunk",
+            "type": "thinking" | "text",
+            "is_thinking_block": bool,  # True if this is a thinking block
+            "done": bool,               # True for the last chunk
+            "metadata": {...}           # Optional metadata
+        }
         """
         # Estimate token usage for input
         estimated_input_tokens = self._estimate_tokens(input)
 
-        # Check rate limit with a buffer for expected output tokens
-        # Assume roughly similar number of output tokens as input
-        estimated_total = estimated_input_tokens * 2
+        # For thinking-enabled responses, we need a larger buffer
+        if (
+            model_supports_thinking(self._config.bedrock_model_id)
+            and self._config.parameters.thinking.enabled
+        ):
+            # Thinking can use up to budget_tokens plus regular response
+            estimated_total = (
+                estimated_input_tokens
+                + self._config.parameters.thinking.budget_tokens
+                + estimated_input_tokens
+            )
+        else:
+            # Regular response estimation
+            estimated_total = estimated_input_tokens * 2
+
+        # Check rate limit
         is_allowed, wait_time = self._rate_limiter.check_rate_limit(estimated_total)
 
         if not is_allowed:
@@ -468,16 +547,112 @@ class BedrockLLM(LLMInterface):
                 st.markdown("")
                 time.sleep(wait_time)
 
-        # Process the stream
+        # Track state
         usage_data = None
-        try:
-            # Yield chunks from the LLM stream
-            for chunk in self._llm.stream(input=input):
-                yield chunk
+        current_thinking_block = ""
+        current_thinking_signature = None
+        current_text_block = ""
+        all_content_items: ChatContent = []
 
+        try:
+            # Process chunks from the LLM stream
+            for chunk in self._llm.stream(input=input):
                 # Extract usage data if available
-                if hasattr(chunk, "usage_metadata") and chunk.usage_metadata:
-                    usage_data = chunk.usage_metadata
+                if (
+                    hasattr(chunk, "additional_kwargs")
+                    and "usage_metadata" in chunk.additional_kwargs
+                ):
+                    usage_data = chunk.additional_kwargs["usage_metadata"]
+
+                # Process content
+                if isinstance(chunk.content, str):
+                    # Simple text chunk
+                    current_text_block += chunk.content
+                    yield {
+                        "content": chunk.content,
+                        "type": "text",
+                        "is_thinking_block": False,
+                        "done": False,
+                    }
+                elif isinstance(chunk.content, list):
+                    # Structured content
+                    for item in chunk.content:
+                        if isinstance(item, dict):
+                            if item.get("type") == "reasoning_content":
+                                # Accumulate thinking content
+                                thinking_chunk = item.get("reasoning_content", {}).get(
+                                    "text"
+                                )
+
+                                if thinking_chunk:
+                                    current_thinking_block += thinking_chunk
+
+                                if item.get("reasoning_content", {}).get("signature"):
+                                    current_thinking_signature = item.get(
+                                        "reasoning_content", {}
+                                    ).get("signature")
+
+                                yield {
+                                    "content": thinking_chunk,
+                                    "type": "thinking",
+                                    "is_thinking_block": True,
+                                    "done": False,
+                                }
+
+                            elif item.get("type") == "text":
+                                # Accumulate text content
+                                text = item.get("text", "")
+                                current_text_block += text
+                                yield {
+                                    "content": text,
+                                    "type": "text",
+                                    "is_thinking_block": False,
+                                    "done": False,
+                                }
+
+                # If we get an empty content or end marker, flush current blocks
+                if not chunk.content:
+                    # Add thinking block if we have accumulated content
+                    if current_thinking_block:
+                        all_content_items.append(
+                            ChatContentItem(
+                                thinking=current_thinking_block,
+                                thinking_signature=current_thinking_signature,
+                            )
+                        )
+                        current_thinking_block = ""
+
+                    # Add text block if we have accumulated content
+                    if current_text_block:
+                        all_content_items.append(
+                            ChatContentItem(text=current_text_block)
+                        )
+                        current_text_block = ""
+
+            # Send final completion chunk
+            yield {
+                "content": "",
+                "type": "text",
+                "is_thinking_block": False,
+                "done": True,
+                "metadata": {"usage_data": usage_data},
+            }
+
+            # After streaming completes, save the full message if not temporary
+            if all_content_items:
+                assistant_message = ChatMessage.create(
+                    role="assistant",
+                    content=all_content_items,
+                    index=len(st.session_state.messages),
+                    session_id=st.session_state.get("current_session_id", ""),
+                )
+                # Store in session state
+                st.session_state.messages.append(assistant_message)
+                if not st.session_state.get(
+                    "temporary_session", False
+                ) and st.session_state.get("current_session_id"):
+                    # Store in storage
+                    self._storage.save_message(assistant_message)
 
         finally:
             # After stream completes (or errors), extract and update token usage
@@ -525,7 +700,21 @@ class BedrockLLM(LLMInterface):
         """Invoke the model with rate limiting"""
         # Estimate token usage
         estimated_input_tokens = self._estimate_tokens(input)
-        estimated_total = estimated_input_tokens * 2  # Assume output similar to input
+
+        # For thinking-enabled responses, we need a larger buffer
+        if (
+            model_supports_thinking(self._config.bedrock_model_id)
+            and self._config.parameters.thinking.enabled
+        ):
+            # Thinking can use up to budget_tokens plus regular response
+            estimated_total = (
+                estimated_input_tokens
+                + self._config.parameters.thinking.budget_tokens
+                + estimated_input_tokens
+            )
+        else:
+            # Regular response estimation
+            estimated_total = estimated_input_tokens * 2
 
         # Check rate limit
         is_allowed, wait_time = self._rate_limiter.check_rate_limit(estimated_total)
@@ -546,8 +735,25 @@ class BedrockLLM(LLMInterface):
 
         # Extract token usage
         usage_data = None
-        if hasattr(response, "usage_metadata") and response.usage_metadata:
-            usage_data = response.usage_metadata
+        if (
+            hasattr(response, "additional_kwargs")
+            and "usage_metadata" in response.additional_kwargs
+        ):
+            usage_data = response.additional_kwargs["usage_metadata"]
+
+        # Process thinking blocks for logging
+        has_thinking = False
+        if (
+            hasattr(response, "content")
+            and isinstance(response.content, list)
+            and any(
+                isinstance(item, dict)
+                and item.get("type") in ["thinking", "redacted_thinking"]
+                for item in response.content
+            )
+        ):
+            logger.debug("Received thinking block in response")
+            has_thinking = True
 
         token_usage = self._extract_token_usage(usage_data)
 

@@ -24,6 +24,7 @@ KNOWN_MAX_OUTPUT_TOKENS: Dict[str, int] = {
     "anthropic.claude-3-sonnet-20240229-v1:0": 4096,
     "anthropic.claude-3-haiku-20240307-v1:0": 4096,
     "anthropic.claude-3-opus-20240229-v1:0": 4096,
+    "anthropic.claude-3-7-sonnet-20250219-v1:0": 64_000,
     "anthropic.claude-v2:1": 4096,
     "anthropic.claude-instant-v1": 4096,
     "amazon.titan-text-express-v1": 8192,
@@ -187,4 +188,19 @@ class BedrockService:
         Returns:
             int: The maximum number of output tokens for the model
         """
-        return KNOWN_MAX_OUTPUT_TOKENS.get(bedrock_model_id, DEFAULT_MAX_OUTPUT_TOKENS)
+        # First try exact match
+        if bedrock_model_id in KNOWN_MAX_OUTPUT_TOKENS:
+            return KNOWN_MAX_OUTPUT_TOKENS[bedrock_model_id]
+
+        # If no exact match, try matching without region prefix
+        normalized_id = bedrock_model_id.split(".")[
+            -2:
+        ]  # Get last two parts (e.g., 'claude-3-sonnet-20250219-v1:0')
+        if normalized_id:
+            normalized_id = ".".join(normalized_id)
+            for known_id in KNOWN_MAX_OUTPUT_TOKENS:
+                if known_id.endswith(normalized_id):
+                    return KNOWN_MAX_OUTPUT_TOKENS[known_id]
+
+        # If still no match, return default
+        return DEFAULT_MAX_OUTPUT_TOKENS

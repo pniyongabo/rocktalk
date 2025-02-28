@@ -3,12 +3,12 @@ import uuid
 from datetime import datetime, timezone
 from enum import Enum
 from functools import partial
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional, Sequence, TypeAlias
 
 import streamlit as st
 from langchain.schema import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from PIL.ImageFile import ImageFile
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from streamlit_chat_prompt import ImageData, PromptReturn, prompt
 from streamlit_js_eval import streamlit_js_eval
 from utils.image_utils import MAX_IMAGE_WIDTH, image_from_b64_image
@@ -70,21 +70,66 @@ def copy_value_to_clipboard(value: str):
     st.session_state.message_copied = 3
 
 
+class ThinkingParameters(BaseModel):
+    """Parameters for Claude's extended thinking capability.
+
+    Attributes:
+        enabled: Whether extended thinking is enabled
+        budget_tokens: Maximum tokens Claude can use for internal reasoning (min: 1,024)
+    """
+
+    enabled: bool = False
+    budget_tokens: int = Field(
+        default=16000,
+        ge=1024,  # Minimum 1,024 tokens as per API requirements
+        lt=128000,  # Maximum 128,000 tokens
+    )
+
+
 class LLMParameters(BaseModel):
-    temperature: float = 0.5
-    max_output_tokens: Optional[int] = None
-    top_p: Optional[float] = None
-    top_k: Optional[int] = None  # Additional parameter for Anthropic models
+    """Parameters for the LLM model."""
+
+    temperature: float = Field(
+        default=0.5, description="Sampling temperature between 0 and 1", ge=0, le=1
+    )
+    top_p: Optional[float] = Field(
+        default=None, description="Nucleus sampling parameter", ge=0, le=1
+    )
+    top_k: Optional[int] = Field(
+        default=None,
+        description="Top-k sampling parameter (additional parameter for Anthropic models)",
+        ge=0,
+    )
+    max_output_tokens: Optional[int] = Field(
+        default=None, description="Maximum number of tokens to generate"
+    )
+    thinking: ThinkingParameters = Field(
+        default_factory=ThinkingParameters,
+        description="Extended thinking parameters for Claude 3.7 models",
+    )
 
 
 _DEFAULT_LLM_CONFIG: Optional["LLMConfig"] = None
 
 
 class LLMConfig(BaseModel):
-    bedrock_model_id: str
-    parameters: LLMParameters
-    stop_sequences: List[str] = Field(default_factory=list)
-    system: Optional[str] = None
+    """Configuration for the LLM model."""
+
+    bedrock_model_id: str = Field(
+        description="Bedrock model ID",
+    )
+    parameters: LLMParameters = Field(
+        default_factory=LLMParameters, description="Model parameters"
+    )
+    stop_sequences: List[str] = Field(
+        default_factory=list,
+        description="Sequences that will cause the model to stop generating",
+    )
+    system: Optional[str] = Field(
+        default=None,
+        description="System prompt",
+    )
+
     rate_limit: int = Field(
         default=800_000,  # https://docs.aws.amazon.com/general/latest/gr/bedrock.html
         description="Maximum tokens per minute to process",
@@ -114,11 +159,46 @@ class ChatTemplate(BaseModel):
     template_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
 
 
+class ChatContentItem(BaseModel):
+    """Content of a chat message, which can be text or other media types."""
+
+    text: Optional[str] = None
+    thinking: Optional[str] = None
+    thinking_signature: Optional[str] = None
+    redacted_thinking: Optional[str] = None
+    image_data: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_content(self) -> "ChatContentItem":
+        """Validate that at least one content type is provided and only one is set"""
+        values = self.model_dump()
+        content_fields = [
+            values.get("text"),
+            values.get("thinking"),
+            values.get("redacted_thinking"),
+            values.get("image_data"),
+        ]
+
+        # Check if at least one content field is provided
+        if not any(content_fields):
+            raise ValueError("At least one content type must be provided")
+
+        # Check if only one content type is provided
+        if sum(1 for field in content_fields if field is not None) > 1:
+            raise ValueError("Only one content type should be provided")
+
+        return self
+
+
+ChatContent: TypeAlias = List[ChatContentItem]
+
+
 class ChatMessage(BaseModel):
     message_id: int
     session_id: str
+    content: ChatContent = Field(default_factory=list)
     role: str
-    content: str | list[str | dict]
     index: int
     created_at: datetime = Field(default_factory=partial(datetime.now, timezone.utc))
 
@@ -148,7 +228,7 @@ class ChatMessage(BaseModel):
 
         # Delete option
         if st.button(
-            ":material/delete_history: Trim History from Here",
+            ":material/delete_history: Delete Message and All Subsequent Messages",
             key=f"delete_message_edit_dialog",
             type="secondary",
             use_container_width=True,
@@ -169,7 +249,7 @@ class ChatMessage(BaseModel):
     @staticmethod
     def create(
         role: str,
-        content: Any,
+        content: List[ChatContentItem],
         index: int,
         session_id: Optional[str] = None,
         message_id: Optional[int] = None,
@@ -206,28 +286,39 @@ class ChatMessage(BaseModel):
             key=f"{self.role}_message_container_{self.message_id}_{unique_id}",
         ):
             with st.chat_message(self.role):
-                if isinstance(self.content, str):
-                    text = self.content
-                elif isinstance(self.content, list):
+                # if isinstance(self.content, str):
+                #     text = self.content
+                #     st.markdown(escape_dollarsign(text))
+                if isinstance(self.content, list):
                     text_list: List[str] = []
+                    thinking_blocks: List[str] = []
+
+                    # First pass: collect thinking blocks and text content
                     for item in self.content:
-                        if isinstance(item, dict):
-                            if item["type"] == "text":
-                                text_list.append(item["text"])
-                            elif item["type"] == "image":
-                                pil_image: ImageFile = image_from_b64_image(
-                                    item["source"]["data"]
-                                )
-                                width: int = pil_image.size[0]
-                                st.image(
-                                    image=pil_image,
-                                    width=min(width, MAX_IMAGE_WIDTH),
-                                )
-                        else:
-                            text_list.append(str(item))
+                        if item.text:
+                            text_list.append(item.text)
+                        elif item.image_data:
+                            pil_image: ImageFile = image_from_b64_image(item.image_data)
+                            width: int = pil_image.size[0]
+                            st.image(
+                                image=pil_image,
+                                width=min(width, MAX_IMAGE_WIDTH),
+                            )
+                        elif item.thinking:
+                            thinking_blocks.append(item.thinking)
+                        elif item.redacted_thinking:
+                            thinking_blocks.append("[Content redacted for safety]")
+
+                    # Display thinking blocks first
+                    if thinking_blocks:
+                        with st.expander("View reasoning process", expanded=True):
+                            for block in thinking_blocks:
+                                st.markdown(escape_dollarsign(block))
+
+                    # Then display text content
                     text = "".join(text_list)
-                if text:
-                    st.markdown(escape_dollarsign(text))
+                    if text:
+                        st.markdown(escape_dollarsign(text))
 
             message_button_container_key = (
                 f"message_button_container_{self.message_id}_{unique_id}"
@@ -278,19 +369,56 @@ class ChatMessage(BaseModel):
         Returns:
             LangChain message object (either HumanMessage or AIMessage).
         """
-        if self.role == "system":
-            return SystemMessage(
-                content=self.content, additional_kwargs={"role": "system"}
-            )
-        elif self.role == "user":
-            return HumanMessage(
-                content=self.content, additional_kwargs={"role": "user"}
-            )
-        elif self.role == "assistant":
-            return AIMessage(
-                content=self.content, additional_kwargs={"role": "assistant"}
-            )
-        raise ValueError(f"Unsupported message role: {self.role}")
+        if isinstance(self.content, str):
+            if self.role == "system":
+                return SystemMessage(content=self.content)
+            elif self.role == "user":
+                return HumanMessage(content=self.content)
+            elif self.role == "assistant":
+                return AIMessage(content=self.content)
+            else:
+                raise ValueError(f"Invalid role: {self.role}")
+        else:
+            # Handle structured content for Anthropic Claude 3.7 thinking blocks
+            content_list: List[Any] = []
+            for item in self.content:
+                if item.text:
+                    content_list.append({"type": "text", "text": item.text})
+                elif item.thinking:
+                    content_list.append(
+                        {
+                            "type": "thinking",
+                            "thinking": item.thinking,
+                            "signature": item.thinking_signature,
+                        }
+                    )
+                elif item.redacted_thinking:
+                    content_list.append(
+                        {
+                            "type": "redacted_thinking",
+                            "redacted_thinking": item.redacted_thinking,
+                        }
+                    )
+                elif item.image_data:
+                    content_list.append(
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": item.metadata.get("format", "base64"),
+                                "media_type": item.metadata.get(
+                                    "media_type", "image/png"
+                                ),
+                                "data": item.image_data,
+                            },
+                        }
+                    )
+
+            if self.role == "assistant":
+                return AIMessage(content=content_list)
+            elif self.role == "user":
+                return HumanMessage(content=content_list)
+            else:
+                return SystemMessage(content=content_list)
 
     @staticmethod
     def from_system_message(
@@ -306,7 +434,7 @@ class ChatMessage(BaseModel):
             ChatMessage.create(
                 session_id=session_id,
                 role="system",
-                content=str(system_message),
+                content=[ChatContentItem(text=system_message)],
                 index=-1,
             )
             if system_message
@@ -329,26 +457,25 @@ class ChatMessage(BaseModel):
         Returns:
             ChatMessage object containing the user input.
         """
-        content = []
+        content_items: ChatContent = []
         if prompt_data.text:
-            content.append({"type": "text", "text": prompt_data.text})
+            content_items.append(ChatContentItem(text=prompt_data.text))
         if prompt_data.images:
             for image in prompt_data.images:
-                content.append(
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": image.format,
+                content_items.append(
+                    ChatContentItem(
+                        image_data=image.data,  # Store the image data in image_url field
+                        metadata={
+                            "format": image.format,
                             "media_type": image.type,
-                            "data": image.data,
                         },
-                    }
+                    )
                 )
 
         return ChatMessage.create(
             session_id=session_id,
             role="user",
-            content=content,
+            content=content_items,
             index=(index if index is not None else len(st.session_state.messages)),
         )
 
@@ -359,27 +486,57 @@ class ChatMessage(BaseModel):
             PromptReturn object containing the message text and any images.
         """
         text = None
-        images = []
+        images: List[ImageData] = []
+
         logger.debug(
             f"Prompt return raw data from streamlit-chat-prompt: {self.content}"
         )
+
         if isinstance(self.content, list):
             for item in self.content:
-                if isinstance(item, dict):
-                    if item["type"] == "text":
-                        text = item["text"]
-                    elif item["type"] == "image":
+                if isinstance(item, ChatContentItem):
+                    if item.text:
+                        text = item.text
+                    elif item.image_data:
                         images.append(
                             ImageData(
-                                format=item["source"]["type"],
-                                type=item["source"]["media_type"],
-                                data=item["source"]["data"],
+                                format=item.metadata.get("format", "base64"),
+                                type=item.metadata.get("media_type", "image/jpeg"),
+                                data=item.image_data,
                             )
                         )
-        elif isinstance(self.content, str):
-            text = self.content
+                else:
+                    raise ValueError(f"Invalid content type: {type(item)}")
+                # elif isinstance(item, dict):  # For backward compatibility
+                #     if item.get("type") == "text":
+                #         text = item.get("text")
+                #     elif item.get("type") == "image" and "source" in item:
+                #         images.append(
+                #             ImageData(
+                #                 format=item["source"].get("type", "base64"),
+                #                 type=item["source"].get("media_type", "image/jpeg"),
+                #                 data=item["source"].get("data"),
+                #             )
+                #         )
+        else:
+            raise ValueError(f"Invalid content type: {type(self.content)}")
 
         return PromptReturn(text=text, images=images if images else None)
+
+    def serialize_message_content(self) -> str:
+        """Convert a list of ChatContentItem objects to a JSON string for storage."""
+        # Convert each ChatContentItem to a dict
+        serialized_items = [item.model_dump() for item in self.content]
+        return json.dumps(serialized_items)
+
+    @staticmethod
+    def deserialize_message_content(content_json: str) -> ChatContent:
+        """Convert a JSON string back to a list of ChatContentItem objects."""
+        # Parse the JSON string into a list of dicts
+        content_data = json.loads(content_json)
+
+        # Convert each dict back to a ChatContentItem
+        return [ChatContentItem.model_validate(item) for item in content_data]
 
 
 class ChatSession(BaseModel):

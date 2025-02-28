@@ -4,13 +4,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import List, Optional, Tuple
 
-from models.interfaces import (
-    ChatMessage,
-    ChatSession,
-    ChatTemplate,
-    LLMConfig,
-    LLMParameters,
-)
+from .interfaces import ChatMessage, ChatSession, ChatTemplate, LLMConfig, LLMParameters
 
 ROCKTALK_DEFAULT_MODEL = os.getenv(
     "ROCKTALK_DEFAULT_MODEL", "anthropic.claude-3-5-sonnet-20241022-v2:0"
@@ -24,6 +18,8 @@ class SearchOperator(StrEnum):
 
 class StorageInterface(ABC):
     """Protocol defining the interface for chat storage implementations"""
+
+    CURRENT_SCHEMA_VERSION = 2
 
     @abstractmethod
     def save_message(self, message: ChatMessage) -> None:

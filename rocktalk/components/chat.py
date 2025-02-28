@@ -1,10 +1,10 @@
 """Chat interface module for handling user-AI conversations with support for text and images."""
 
+from datetime import datetime
 from typing import Optional, cast
 
 import streamlit as st
 from langchain.schema import BaseMessage
-from langchain_core.messages import AIMessage
 from models.interfaces import ChatMessage, ChatSession, TurnState
 from models.llm import LLMInterface
 from models.storage_interface import StorageInterface
@@ -54,6 +54,8 @@ class ChatInterface:
             st.session_state.edit_message_value = None  # ChatMessage, PromptReturn
         if "skip_next_scroll" not in st.session_state:
             st.session_state.skip_next_scroll = False
+        if "needs_title_generation" not in st.session_state:
+            st.session_state.needs_title_generation = False
 
     def render(self) -> None:
         """Render the chat interface and handle the current turn state."""
@@ -61,6 +63,8 @@ class ChatInterface:
         self._display_chat_history()
         self._handle_chat_input()
         self._generate_ai_response()
+        self._generate_title()
+        self._finish_conversation_turn()
 
     def _stop_chat_stream(self):
         st.toast("Stopping stream")
@@ -168,7 +172,25 @@ class ChatInterface:
             st.session_state.scroll_div_index += 1
             scroll_to_bottom()
 
-            # Save to storage if we have a session, otherwise save later after session title is generated
+            # Create new session if needed
+            if (
+                not st.session_state.get("temporary_session", False)
+                and not st.session_state.current_session_id
+            ):
+                config = self.llm.get_config().model_copy(deep=True)
+                new_session: ChatSession = ChatSession(
+                    title=f"New Chat {datetime.now().isoformat()}",  # Temporary title until first AI response
+                    config=config,
+                    total_tokens_used=st.session_state.get("temp_session_tokens", 0),
+                )
+                st.session_state.current_session_id = new_session.session_id
+                st.session_state.needs_title_generation = (
+                    True  # Flag to generate title after first AI response
+                )
+                self.storage.store_session(new_session)
+                human_message.session_id = new_session.session_id
+
+            # Save message to storage if we have a non-temporary session
             if st.session_state.current_session_id and not st.session_state.get(
                 "temporary_session", False
             ):
@@ -202,14 +224,12 @@ class ChatInterface:
             with st.container(border=True, key="assistant_message_container_streaming"):
                 # Generate and display AI response
                 with st.chat_message("assistant"):
-                    usage_data = None
-                    latency = None
-                    stop_reason = None
+                    thinking_placeholder = st.empty()  # For displaying thinking blocks
                     message_placeholder = st.empty()
+
                     try:
                         with self.prompt_placeholder:
                             # add a stop stream button
-                            stop_stream_button_key = "stop_stream_button"
                             with st.container():
                                 button(
                                     label="Stop (⌘/⊞ + ⌫)",
@@ -220,48 +240,50 @@ class ChatInterface:
                                     use_container_width=True,
                                 )
                         full_response: str = ""
+                        thinking_content = ""
+
                         scroll_to_bottom_streaming()
+
                         for chunk in self.llm.stream(input=llm_messages):
-                            chunk = cast(AIMessage, chunk)
                             if st.session_state.stop_chat_stream:
                                 logger.info("Interrupting stream")
                                 break
-                            for item in chunk.content:
-                                if isinstance(item, dict) and "text" in item:
-                                    text = item["text"]
-                                    full_response += text
+
+                            # Check if this is the final chunk
+                            if chunk.get("done", False):
+                                # Final chunk with metadata
+                                continue
+
+                                # Handle different chunk types
+                            if chunk.get("is_thinking_block", False):
+                                # This is a thinking block
+                                has_thinking = True
+                                thinking_content += chunk["content"] or ""
+
+                                # Display thinking in an expander
+                                with thinking_placeholder.container():
+                                    with st.expander(
+                                        "View reasoning process", expanded=True
+                                    ):
+                                        st.markdown(f"```\n{thinking_content}\n```")
+                            else:
+                                # Regular text content
+                                full_response += chunk["content"]
                                 message_placeholder.markdown(
                                     escape_dollarsign(full_response + "▌")
                                 )
 
-                            # Track metadata
-                            if chunk.response_metadata:
-                                if "stopReason" in chunk.response_metadata:
-                                    stop_reason = chunk.response_metadata["stopReason"]
-                                if "metrics" in chunk.response_metadata:
-                                    latency = chunk.response_metadata["metrics"].get(
-                                        "latencyMs"
-                                    )
-                            # Track usage data
-                            if (
-                                hasattr(chunk, "usage_metadata")
-                                and chunk.usage_metadata
-                            ):
-                                usage_data = chunk.usage_metadata
+                        # Display final response (without cursor)
+                        message_placeholder.markdown(escape_dollarsign(full_response))
 
-                        metadata = {
-                            "usage_data": usage_data,
-                            "latency_ms": latency,
-                            "stop_reason": stop_reason,
-                        }
-                        logger.debug(f"LLM response: {metadata}")
                     except Exception as e:
-                        logger.error(f"Error in LLM stream: {e}")
-                        metadata = {
-                            "usage_data": usage_data,
-                            "latency_ms": latency,
-                            "stop_reason": "error",
-                        }
+                        # logger.error(f"Error in LLM stream: {e}")
+                        import traceback
+
+                        logger.error(
+                            f"Error in LLM stream. Full stack trace: \n{traceback.format_exc()}"
+                        )
+
                         # Display an error message to the user without altering the chat history
                         st.error(
                             f'An error occurred while generating the AI response. You can click "Retry" to retry chat generation or "Cancel" to edit your prompt.\n\n{e}'
@@ -304,67 +326,47 @@ class ChatInterface:
                         if not (retry_clicked or cancel_clicked):
                             return
 
+                    # Handle stream interruption
                     if st.session_state.stop_chat_stream:
-                        metadata["stop_reason"] = "interrupted"
-                        logger.debug(f"LLM response: {metadata}")
-
                         st.session_state.stop_chat_stream = False
                         message_placeholder.empty()
+                        thinking_placeholder.empty()
                         st.session_state.turn_state = TurnState.HUMAN_TURN
-                        last_human_message: ChatMessage = (
-                            st.session_state.messages.pop()
-                        )
-                        self.storage.delete_messages_from_index(
-                            session_id=st.session_state.current_session_id,
-                            from_index=last_human_message.index,
-                        )
-                        st.session_state.user_input_default = (
-                            last_human_message.to_prompt_return()
-                        )
+
+                        # Remove the last messages
+                        if len(st.session_state.messages) > 0:
+                            last_human_message: ChatMessage = (
+                                st.session_state.messages.pop()
+                            )
+
+                            # Remove the message from storage if needed
+                            if (
+                                st.session_state.current_session_id
+                                and not st.session_state.get("temporary_session", False)
+                            ):
+                                self.storage.delete_messages_from_index(
+                                    session_id=st.session_state.current_session_id,
+                                    from_index=last_human_message.index,
+                                )
+
+                            st.session_state.user_input_default = (
+                                last_human_message.to_prompt_return()
+                            )
+
                         st.rerun()
 
-                    message_placeholder.markdown(escape_dollarsign(full_response))
-                    logger.debug(f"LLM response: {full_response}\n{metadata}")
+    def _generate_title(self) -> None:
+        # Generate title after first AI response if needed
+        if st.session_state.get("needs_title_generation", False):
+            title: str = self.llm.generate_session_title()
+            session = self.storage.get_session(st.session_state.current_session_id)
+            session.title = title
+            self.storage.update_session(session)
+            st.session_state.needs_title_generation = False
 
-                    # Create ChatMessage
-                    current_index = len(st.session_state.messages)
-
-                    st.session_state.messages.append(
-                        ChatMessage.create(
-                            session_id=st.session_state.current_session_id or "",
-                            role="assistant",
-                            content=full_response,
-                            index=current_index,
-                        )
-                    )
-
-                    if not st.session_state.get("temporary_session", False):
-                        # Create new session if none exists
-                        if not st.session_state.current_session_id:
-                            title: str = self.llm.generate_session_title()
-                            config = self.llm.get_config().model_copy(deep=True)
-                            new_session: ChatSession = ChatSession(
-                                title=title,
-                                config=config,
-                                total_tokens_used=st.session_state.get(
-                                    "temp_session_tokens", 0
-                                ),
-                            )
-                            st.session_state.current_session_id = new_session.session_id
-                            self.storage.store_session(new_session)
-                            # Update session_id for all messages and save
-                            for msg in st.session_state.messages:
-                                msg.session_id = new_session.session_id
-
-                            # save to storage the original human message we didn't save initially
-                            self.storage.save_message(
-                                message=st.session_state.messages[-2]
-                            )
-
-                        # Save AI message
-                        self.storage.save_message(message=st.session_state.messages[-1])
-
-                    # Update state for next human input
-                    st.session_state.turn_state = TurnState.HUMAN_TURN
-                    st.session_state.stored_user_input = None
-                    st.rerun()
+    def _finish_conversation_turn(self) -> None:
+        if st.session_state.turn_state == TurnState.AI_TURN:
+            # Update state for next human input
+            st.session_state.turn_state = TurnState.HUMAN_TURN
+            st.session_state.stored_user_input = None
+            st.rerun()

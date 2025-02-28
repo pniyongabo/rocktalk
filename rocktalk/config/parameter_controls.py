@@ -4,6 +4,7 @@ from typing import Any, Literal, Optional
 
 import streamlit as st
 from models.interfaces import ChatSession, LLMConfig
+from models.llm import model_supports_thinking
 from services.bedrock import BedrockService, FoundationModelSummary
 from utils.log import logger
 from utils.streamlit_utils import OnPillsChange, PillOptions, on_pills_change
@@ -41,6 +42,33 @@ class ParameterControls:
             logger.warning("No key provided for set_control_config_value")
             return
 
+        # Thinking parameters for Claude 3.7
+        if parameter == "thinking_enabled":
+            if action == "clear":
+                st.session_state.temp_llm_config.parameters.thinking.enabled = False
+                return
+            else:
+                assert (
+                    key is not None
+                ), "Key must be provided for thinking_enabled control"
+                new_val = bool(value or st.session_state[key])
+                st.session_state.temp_llm_config.parameters.thinking.enabled = new_val
+        elif parameter == "thinking_budget":
+            if action == "clear":
+                st.session_state.temp_llm_config.parameters.thinking.budget_tokens = (
+                    4000
+                )
+                return
+            else:
+                assert (
+                    key is not None
+                ), "Key must be provided for thinking_budget control"
+                new_val = int(value or st.session_state[key])
+                st.session_state.temp_llm_config.parameters.thinking.budget_tokens = (
+                    new_val
+                )
+
+        # Existing parameter controls
         if parameter == "temperature":
             if action == "clear":
                 logger.debug(
@@ -211,6 +239,130 @@ class ParameterControls:
                         key=system_prompt_key, parameter="system_prompt"
                     )
 
+    def _handle_thinking_budget_change(self, key: str, parameter: str):
+        """Handle changes to the thinking budget by ensuring max_output_tokens is sufficient"""
+        # First update the thinking budget using the standard method
+        self.control_on_change(key=key, parameter=parameter)
+
+        # Then check if max_output_tokens needs to be increased
+        thinking_budget = (
+            st.session_state.temp_llm_config.parameters.thinking.budget_tokens
+        )
+        max_output = st.session_state.temp_llm_config.parameters.max_output_tokens
+
+        # Only increase max tokens if it's either not set or less than the thinking budget
+        if not max_output or max_output < thinking_budget:
+            self._ensure_sufficient_max_output_tokens()
+
+    def _ensure_sufficient_max_output_tokens(self):
+        """Ensure max_output_tokens is enabled and sufficient for the thinking budget"""
+        config = st.session_state.temp_llm_config
+        thinking_budget = config.parameters.thinking.budget_tokens
+        max_output = config.parameters.max_output_tokens
+
+        # Only make changes if max_output_tokens is not set or less than thinking budget
+        if not max_output or max_output < thinking_budget:
+            # Calculate appropriate max tokens value
+            max_model_tokens = BedrockService.get_max_output_tokens(
+                bedrock_model_id=config.bedrock_model_id
+            )
+            suggested_max_tokens = max(max_model_tokens, thinking_budget + 2000)
+
+            # First ensure the toggle is on
+            max_output_toggle_key = "parameter_toggle_max_output_tokens"
+            if max_output_toggle_key in st.session_state:
+                st.session_state[max_output_toggle_key] = True
+
+            # Use the standard control_on_change method to properly update all state
+            self.control_on_change(
+                key=None,  # We're providing a direct value
+                parameter="max_output_tokens",
+                action="set",
+                value=suggested_max_tokens,
+            )
+
+            st.session_state.temp_llm_config.parameters.max_output_tokens = (
+                suggested_max_tokens
+            )
+
+            # # Also update the UI widget to show the new value
+            # max_output_key = "parameter_control_max_output_tokens"
+            # if max_output_key in st.session_state:
+            #     st.session_state[max_output_key] = suggested_max_tokens
+
+            # Inform the user
+            # st.info(
+            #     f"Max Output Tokens automatically adjusted to {suggested_max_tokens:,} tokens to accommodate thinking budget. "
+            #     f"For best results, Max Output Tokens should exceed the thinking budget."
+            # )
+
+            # Log for debugging
+            logger.debug(f"Updated max_output_tokens to {suggested_max_tokens}")
+
+    def _handle_thinking_enabled_change(self, key: str, parameter: str):
+        """Handle enabling/disabling thinking by ensuring max_output_tokens is properly set"""
+        # First update the thinking enabled state
+        self.control_on_change(key=key, parameter=parameter)
+
+        # If thinking was just enabled, ensure max_output_tokens is enabled and sufficient
+        if st.session_state.temp_llm_config.parameters.thinking.enabled:
+            # Ensure the UI state for max_output_tokens toggle is set to True first
+            max_output_toggle_key = "parameter_toggle_max_output_tokens"
+            if max_output_toggle_key in st.session_state:
+                st.session_state[max_output_toggle_key] = True
+
+            # Then adjust the value
+            self._ensure_sufficient_max_output_tokens()
+
+    def render_thinking_parameters(self, config: LLMConfig) -> None:
+        """Render controls for Claude's extended thinking capability"""
+        if self.read_only:
+            if config.parameters.thinking.enabled:
+                st.markdown(
+                    f"**Extended Thinking:** Enabled (Budget: {config.parameters.thinking.budget_tokens:,} tokens)"
+                )
+            return
+
+        thinking_enabled_key = "parameter_control_thinking_enabled"
+        thinking_budget_key = "parameter_control_thinking_budget"
+
+        # Enable/disable thinking
+        thinking_enabled = st.checkbox(
+            "Enable Extended Thinking",
+            value=config.parameters.thinking.enabled,
+            key=thinking_enabled_key,
+            help=(
+                "Enable Claude's step-by-step reasoning capabilities. When enabled, temperature, "
+                "top_p, and top_k settings are ignored."
+                if self.show_help
+                else None
+            ),
+            on_change=self._handle_thinking_enabled_change,
+            kwargs=dict(key=thinking_enabled_key, parameter="thinking_enabled"),
+        )
+
+        # Thinking budget slider
+        if thinking_enabled:
+            st.number_input(
+                "Thinking Budget (tokens)",
+                min_value=1024,
+                max_value=128000,
+                value=config.parameters.thinking.budget_tokens,
+                step=1000,
+                format="%d",
+                key=thinking_budget_key,
+                help=(
+                    "Maximum tokens Claude can use for internal reasoning (min: 1,024). "
+                    "Higher budgets can improve response quality for complex tasks. "
+                    "Anthropic suggests trying at least 4,000 tokens for more comprehensive reasoning. "
+                    "Note: Thinking tokens are billed as output tokens and count towards rate limits."
+                    if self.show_help
+                    else None
+                ),
+                on_change=self._handle_thinking_budget_change,
+                kwargs=dict(key=thinking_budget_key, parameter="thinking_budget"),
+            )
+
     def render_temperature(self, config: LLMConfig) -> None:
         """Render temperature control or view"""
         if self.read_only:
@@ -300,12 +452,6 @@ class ParameterControls:
                         kwargs=dict(key=control_key, parameter=escaped_param_name),
                         **control_args,
                     )
-            # else:
-            # self.control_on_change(
-            #     key=None,
-            #     parameter=param_name.lower().replace(" ", "_"),
-            #     action="clear",
-            # )
 
     def render_stop_sequences(self, config: LLMConfig) -> None:
         """Render stop sequences control or view"""
@@ -620,8 +766,15 @@ class ParameterControls:
         # System Prompt
         self.render_system_prompt(config)
 
-        # Temperature
-        self.render_temperature(config)
+        # Thinking parameters (Claude 3.7 only)
+        if model_supports_thinking(config.bedrock_model_id):
+            self.render_thinking_parameters(config)
+
+        # Temperature (disabled if thinking is enabled)
+        if not config.parameters.thinking.enabled:
+            self.render_temperature(config)
+        else:
+            st.info("Temperature control is disabled when extended thinking is enabled")
 
         # Max Output Tokens
         max_tokens: int = BedrockService.get_max_output_tokens(
@@ -639,36 +792,42 @@ class ParameterControls:
             ),
         )
 
-        # Top P
-        self.render_optional_parameter(
-            param_name="Top P",
-            param_value=config.parameters.top_p,
-            control_type="slider",
-            min_value=0.0,
-            max_value=1.0,
-            value=config.parameters.top_p or 1.0,
-            step=0.01,
-            help=(
-                "The percentage of most-likely candidates that the model considers"
-                if self.show_help
-                else None
-            ),
-        )
-
-        # Top K (Anthropic only)
-        if "anthropic" in config.bedrock_model_id.lower():
+        # Top P and Top K (disabled if thinking is enabled)
+        if not config.parameters.thinking.enabled:
+            # Top P
             self.render_optional_parameter(
-                param_name="Top K",
-                param_value=config.parameters.top_k,
-                control_type="number_input",
-                min_value=1,
-                max_value=500,
-                value=config.parameters.top_k or 250,
+                param_name="Top P",
+                param_value=config.parameters.top_p,
+                control_type="slider",
+                min_value=0.0,
+                max_value=1.0,
+                value=config.parameters.top_p or 1.0,
+                step=0.01,
                 help=(
-                    "Number of most-likely candidates (Anthropic models only)"
+                    "The percentage of most-likely candidates that the model considers"
                     if self.show_help
                     else None
                 ),
+            )
+
+            # Top K (Anthropic only)
+            if "anthropic" in config.bedrock_model_id.lower():
+                self.render_optional_parameter(
+                    param_name="Top K",
+                    param_value=config.parameters.top_k,
+                    control_type="number_input",
+                    min_value=1,
+                    max_value=500,
+                    value=config.parameters.top_k or 250,
+                    help=(
+                        "Number of most-likely candidates (Anthropic models only)"
+                        if self.show_help
+                        else None
+                    ),
+                )
+        else:
+            st.info(
+                "Top P and Top K controls are disabled when extended thinking is enabled"
             )
 
         # Stop Sequences

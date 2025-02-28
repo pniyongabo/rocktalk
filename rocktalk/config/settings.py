@@ -16,7 +16,7 @@ from models.interfaces import (
     LLMConfig,
     TurnState,
 )
-from models.llm import LLMInterface
+from models.llm import LLMInterface, model_supports_thinking
 from models.storage_interface import StorageInterface
 from services.creds import get_cached_aws_credentials
 from utils.log import USER_LOG_LEVEL, get_log_memoryhandler, logger
@@ -225,6 +225,22 @@ class SettingsManager:
         """Render the settings dialog"""
 
         self.render_template_management()
+
+        # Check if current model supports thinking and show information if needed
+        model_id = st.session_state.temp_llm_config.bedrock_model_id
+        thinking_enabled = st.session_state.temp_llm_config.parameters.thinking.enabled
+
+        if thinking_enabled and not model_supports_thinking(model_id):
+            st.warning(
+                "⚠️ Extended thinking is only supported on Claude 3.7 models. "
+                f"The current model ({model_id}) does not support thinking capabilities."
+            )
+        elif thinking_enabled:
+            st.info(
+                "ℹ️ Extended thinking is enabled. Temperature, top_p, and top_k settings "
+                "will be ignored by the model. Also, Thinking Token Budget and Max Output Tokens "
+                "must both be set with thinking_budget <= max_output_tokens."
+            )
 
         # Save settings
         self.render_apply_settings()
@@ -636,10 +652,6 @@ class SettingsManager:
         """Recursively format parameter differences between configurations.
         Returns a list of markdown formatted diff strings.
         """
-        if old_val != new_val and (old_val or new_val):
-            logger.debug(
-                f"_format_parameter_diff: {param_name} old: {old_val}, new: {new_val}"
-            )
         diffs = []
         indent_str = "  " * indent
 
@@ -647,15 +659,38 @@ class SettingsManager:
         if hasattr(old_val, "model_fields") and hasattr(new_val, "model_fields"):
             # Iterate through fields directly from the model
             for nested_param in old_val.model_fields.keys():
-                nested_diffs = self._format_parameter_diff(
-                    nested_param,
-                    getattr(old_val, nested_param),
-                    getattr(new_val, nested_param),
-                    indent + 1,
-                )
-                if nested_diffs:
-                    # diffs.append(f"{param_name}:")
-                    diffs.extend(nested_diffs)
+                # For thinking parameters, provide more detailed diffs
+                if nested_param == "thinking":
+                    thinking_old = getattr(old_val, nested_param)
+                    thinking_new = getattr(new_val, nested_param)
+
+                    # Show difference in thinking enabled status
+                    if thinking_old.enabled != thinking_new.enabled:
+                        enabled_status = (
+                            "Enabled" if thinking_new.enabled else "Disabled"
+                        )
+                        diffs.append(
+                            f"{indent_str}- Extended Thinking: *{'Enabled' if thinking_old.enabled else 'Disabled'}* → **{enabled_status}**"
+                        )
+
+                    # Show difference in thinking budget if enabled
+                    if (
+                        thinking_new.enabled
+                        and thinking_old.budget_tokens != thinking_new.budget_tokens
+                    ):
+                        diffs.append(
+                            f"{indent_str}- Thinking Budget: *{thinking_old.budget_tokens:,}* → **{thinking_new.budget_tokens:,}** tokens"
+                        )
+                else:
+                    # Process other parameters normally
+                    nested_diffs = self._format_parameter_diff(
+                        nested_param,
+                        getattr(old_val, nested_param),
+                        getattr(new_val, nested_param),
+                        indent + 1,
+                    )
+                    if nested_diffs:
+                        diffs.extend(nested_diffs)
         # Handle basic value differences
         elif old_val != new_val:
             diffs.append(f"{indent_str}- {param_name}: *{old_val}* → **{new_val}**")
@@ -767,6 +802,16 @@ class SettingsManager:
         if self.session:
             new_config.system = self.session.config.system
 
+        # Check if thinking is enabled but model doesn't support it
+        if new_config.parameters.thinking.enabled and not model_supports_thinking(
+            new_config.bedrock_model_id
+        ):
+            st.warning(
+                "Selected template uses extended thinking, but the current model doesn't support it. "
+                "Extended thinking will be disabled."
+            )
+            new_config.parameters.thinking.enabled = False
+
         st.session_state.temp_llm_config = new_config
 
     def _set_default_template(self, template: ChatTemplate):
@@ -778,6 +823,21 @@ class SettingsManager:
         except Exception as e:
             st.error(f"Failed to set default template:\n{str(e)}")
             time.sleep(PAUSE_BEFORE_RELOADING)
+
+    def _render_template_info(self, template: ChatTemplate):
+        """Render additional template info in the UI"""
+        if template.config.parameters.thinking.enabled:
+            st.info(
+                f"📝 This template uses extended thinking capability "
+                f"({template.config.parameters.thinking.budget_tokens:,} tokens budget)"
+            )
+
+            if not model_supports_thinking(template.config.bedrock_model_id):
+                st.warning(
+                    "⚠️ This template uses extended thinking but the configured model "
+                    f"({template.config.bedrock_model_id}) does not support it. "
+                    "Consider updating to a Claude 3.7 model."
+                )
 
     def render_template_management(self):
         """Template management UI"""
@@ -892,18 +952,31 @@ class SettingsManager:
                 st.warning, body="Please provide both name and description"
             )
 
+        config = st.session_state.temp_llm_config
+
+        # Check if thinking is enabled with a non-Claude 3.7 model
+        if config.parameters.thinking.enabled and not model_supports_thinking(
+            config.bedrock_model_id
+        ):
+            return False, partial(
+                st.warning,
+                body="Extended thinking is only available with Claude 3.7 models. Please disable thinking or select a supported model.",
+            )
+
+        # Save the template
         if template:
             template.name = name
             template.description = description
-            template.config = st.session_state.temp_llm_config
+            template.config = config
             self.storage.update_chat_template(template)
         else:
             new_template = ChatTemplate(
                 name=name,
                 description=description,
-                config=st.session_state.temp_llm_config,
+                config=config,
             )
             self.storage.store_chat_template(new_template)
+
         return True, partial(
             st.success,
             body=f"Template '{name}' {'updated' if template else 'created'} successfully",

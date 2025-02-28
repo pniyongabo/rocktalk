@@ -1,5 +1,6 @@
 # TODOs
 
+- new template from existing session settings
 - allow deleting any message
 - add model name/template name on top of session list
 - change password on auth

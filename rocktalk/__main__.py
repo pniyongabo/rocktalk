@@ -10,6 +10,7 @@ import traceback
 from datetime import datetime, timezone
 from importlib.metadata import version
 from pathlib import Path
+from typing import Optional, Tuple
 
 import click
 from dotenv import load_dotenv
@@ -98,31 +99,112 @@ def setup_rocktalk_dir() -> None:
     # Do not create an auth file by default, instead just tell user where to put it and reference the documentation on what it should contain
 
 
-def check_first_run() -> bool:
-    """Check if this is the first run for this version"""
+def backup_database(rocktalk_dir: Path, previous_version: str) -> Optional[Path]:
+    """Create a backup of the chat database when upgrading to a new version
+
+    Args:
+        rocktalk_dir: RockTalk configuration directory
+        previous_version: Previous version that created this database
+
+    Returns:
+        Path to backup file if successful, None otherwise
+    """
+    db_path = rocktalk_dir / "chat_database.db"
+
+    # Skip if database doesn't exist yet
+    if not db_path.exists():
+        logger.warning("No existing database to backup")
+        return None
+
+    # Create backups directory if it doesn't exist
+    backup_dir = rocktalk_dir / "backups"
+    backup_dir.mkdir(exist_ok=True, mode=0o700)  # Secure permissions
+
+    # Use the previous version in the filename, indicating this is the DB used by that version
+    version_str = previous_version if previous_version != "unknown" else "unknown"
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    backup_filename = f"chat_database_v{version_str}_{timestamp}.db"
+    backup_path = backup_dir / backup_filename
+
+    try:
+        # Copy the database file
+        import shutil
+
+        shutil.copy2(db_path, backup_path)
+        logger.debug(f"Created database backup: {backup_path}")
+
+        # Optional: Keep only the 5 most recent backups
+        all_backups = sorted(
+            backup_dir.glob("chat_database_*.db"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        for old_backup in all_backups[5:]:  # Keep 5 most recent
+            old_backup.unlink()
+            logger.debug(f"Removed old backup: {old_backup}")
+
+        return backup_path
+    except Exception as e:
+        logger.error(f"Failed to create database backup: {e}")
+        return None
+
+
+def check_first_run() -> Tuple[bool, Optional[str]]:
+    """Check if this is the first run for this version
+
+    Returns:
+        Tuple of (is_first_run, previous_version)
+    """
     firstrun_path = get_firstrun_path()
 
     if not firstrun_path.exists():
         setup_rocktalk_dir()
-        return True
+        return True, None
 
     try:
         with open(firstrun_path) as f:
             data = json.load(f)
-            return data.get("version") != VERSION
+            previous_version = data.get("version", "unknown")
+            is_new_version = previous_version != VERSION
+
+            return is_new_version, previous_version
     except (json.JSONDecodeError, FileNotFoundError):
-        return True
+        return True, None
 
 
-def show_first_run_message() -> bool:
-    """Show first run welcome message"""
+def show_first_run_message(previous_version: Optional[str] = None) -> bool:
+    """Show first run welcome message
+
+    Args:
+        previous_version: Previous version that was running, if any
+
+    Returns:
+        True if user confirms to continue, False otherwise
+    """
     rocktalk_dir = get_rocktalk_dir()
+    backup_dir = rocktalk_dir / "backups"
 
     click.secho("\nWelcome to RockTalk!", fg="green", bold=True)
     click.secho(f"Version: {VERSION}", fg="blue")
     click.secho(f"Project repository: {REPO_URL}\n", fg="blue")
 
-    click.secho("Configuration directory:", fg="yellow")
+    # Show upgrade message if this is an upgrade
+    if previous_version and previous_version != VERSION:
+        click.secho(
+            f"Upgrading from version {previous_version} to {VERSION}",
+            fg="yellow",
+            bold=True,
+        )
+        db_path = rocktalk_dir / "chat_database.db"
+        if db_path.exists():
+            click.secho("\nDatabase Upgrade:", fg="yellow")
+            click.secho(
+                "  A backup of your current database will be created before any changes"
+            )
+            click.secho(f"  Backup location: {backup_dir}")
+            click.secho("  Note: Only the 5 most recent backups are retained")
+
+    click.secho("\nConfiguration directory:", fg="yellow")
     click.secho(f"  Using: {rocktalk_dir}")
     click.secho(
         "  Note: To use a different location, use --config-dir or $ROCKTALK_DIR (see --help)"
@@ -217,26 +299,35 @@ def main(config_dir, args) -> None:
     load_dotenv()
     check_dependencies()
 
-    # Check for help/version flags before doing first run
-    if "--help" in args or "-h" in args:
-        show_help()
-        sys.exit(0)
-    if "--version" in args:
-        click.echo(f"RockTalk v{VERSION}")
-        sys.exit(0)
-
     try:
         # Set ROCKTALK_DIR environment variable if config-dir provided
         if config_dir:
             os.environ["ROCKTALK_DIR"] = str(config_dir)
 
-        if check_first_run():
-            if not show_first_run_message():
+        # Get the actual config directory (will create if needed)
+        rocktalk_dir = get_rocktalk_dir()
+
+        # Check if this is first run or a version upgrade
+        is_first_run, previous_version = check_first_run()
+
+        if is_first_run:
+            # Show welcome/upgrade message and get user confirmation
+            if not show_first_run_message(previous_version):
                 sys.exit(0)
+
+            # Create backup if upgrading from a previous version
+            if previous_version and previous_version != "unknown":
+                backup_path = backup_database(rocktalk_dir, previous_version)
+                if backup_path:
+                    click.secho(
+                        f"Created database backup: {backup_path.name}", fg="green"
+                    )
+
+            # Mark this version as run
             mark_first_run()
 
-        config_dir = get_rocktalk_dir()
-        run_streamlit(config_dir=config_dir, args=args)
+        # Run the application
+        run_streamlit(config_dir=rocktalk_dir, args=args)
     except Exception as e:
         logger.error(f"Fatal error: {e}")
         sys.exit(1)

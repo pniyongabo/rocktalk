@@ -22,37 +22,188 @@ class SQLiteChatStorage(StorageInterface):
     def _migrate_db(self) -> None:
         """Handle database migrations"""
         with self.get_connection() as conn:
-            # Check if is_private column exists
+            # Check for schema version table
             cursor = conn.execute(
                 """
-                SELECT name FROM pragma_table_info('sessions')
-                WHERE name='is_private'
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name='schema_version'
                 """
             )
-            if not cursor.fetchone():
-                logger.info("Adding is_private column to sessions table")
+            schema_table_exists = cursor.fetchone() is not None
+
+            if not schema_table_exists:
+                # Create schema version table if it doesn't exist
                 conn.execute(
                     """
-                    ALTER TABLE sessions
-                    ADD COLUMN is_private BOOLEAN NOT NULL DEFAULT 0
+                    CREATE TABLE schema_version (
+                        version INTEGER PRIMARY KEY,
+                        applied_at TIMESTAMP NOT NULL
+                    )
                     """
+                )
+                # Insert initial version
+                conn.execute(
+                    """
+                    INSERT INTO schema_version (version, applied_at)
+                    VALUES (0, ?)
+                    """,
+                    (format_datetime(datetime.now(timezone.utc)),),
                 )
 
-            # Check if total_tokens_used column exists
-            cursor = conn.execute(
+            # Get current schema version
+            cursor = conn.execute("SELECT MAX(version) as version FROM schema_version")
+            row = cursor.fetchone()
+            current_version = 0 if row["version"] is None else row["version"]
+            target_version = self.CURRENT_SCHEMA_VERSION
+
+            logger.info(
+                f"Current schema version: {current_version}, Target: {target_version}"
+            )
+
+            # Run migrations sequentially from current to target version
+            if current_version < 1 and target_version >= 1:
+                self._migrate_to_v1(conn)
+
+            if current_version < 2 and target_version >= 2:
+                self._migrate_to_v2(conn)
+
+            # Add future migrations here...
+            # if current_version < 3 and target_version >= 3:
+            #     self._migrate_to_v3(conn)
+
+    def _migrate_to_v1(self, conn) -> None:
+        """Migration for version 1: Adding session columns"""
+        logger.info("Migrating database to schema version 1")
+
+        # Check if is_private column exists
+        cursor = conn.execute(
+            """
+            SELECT name FROM pragma_table_info('sessions')
+            WHERE name='is_private'
+            """
+        )
+        if not cursor.fetchone():
+            logger.info("Adding is_private column to sessions table")
+            conn.execute(
                 """
-                SELECT name FROM pragma_table_info('sessions')
-                WHERE name='total_tokens_used'
+                ALTER TABLE sessions
+                ADD COLUMN is_private BOOLEAN NOT NULL DEFAULT 0
                 """
             )
-            if not cursor.fetchone():
-                logger.info("Adding total_tokens_used column to sessions table")
+
+        # Check if total_tokens_used column exists
+        cursor = conn.execute(
+            """
+            SELECT name FROM pragma_table_info('sessions')
+            WHERE name='total_tokens_used'
+            """
+        )
+        if not cursor.fetchone():
+            logger.info("Adding total_tokens_used column to sessions table")
+            conn.execute(
+                """
+                ALTER TABLE sessions
+                ADD COLUMN total_tokens_used INTEGER NOT NULL DEFAULT 0
+                """
+            )
+
+        # Update schema version
+        conn.execute(
+            """
+            INSERT INTO schema_version (version, applied_at)
+            VALUES (1, ?)
+            """,
+            (format_datetime(datetime.now(timezone.utc)),),
+        )
+
+    def _migrate_to_v2(self, conn) -> None:
+        """Migration for version 2: Message content format"""
+        logger.info("Migrating database to schema version 2")
+
+        # Get all messages
+        cursor = conn.execute("SELECT message_id, content FROM messages")
+        messages = cursor.fetchall()
+
+        for message in messages:
+            message_id = message["message_id"]
+            old_content = message["content"]
+
+            try:
+                # Try to parse the old content
+                content_data = json.loads(old_content)
+
+                # Convert to new format based on content type
+                new_content = []
+
+                # Handle different possible legacy formats
+                if isinstance(content_data, str):
+                    # Simple string content
+                    new_content = [{"text": content_data}]
+                elif isinstance(content_data, list):
+                    # Already a list, check each item's structure
+                    for item in content_data:
+                        if isinstance(item, str):
+                            new_content.append({"text": item})
+                        elif isinstance(item, dict):
+                            if "text" in item:
+                                new_content.append({"text": item["text"]})
+                            elif "thinking" in item:
+                                new_content.append({"thinking": item["thinking"]})
+                            elif "source" in item and item.get("type") == "image":
+                                # Handle image data
+                                new_content.append(
+                                    {
+                                        "image_data": item["source"].get("data", ""),
+                                        "metadata": {
+                                            "format": item["source"].get(
+                                                "type", "base64"
+                                            ),
+                                            "media_type": item["source"].get(
+                                                "media_type", "image/jpeg"
+                                            ),
+                                        },
+                                    }
+                                )
+                else:
+                    # Assume it's a dict with a single content element
+                    if "text" in content_data:
+                        new_content = [{"text": content_data["text"]}]
+                    else:
+                        # Unknown format, store as text with a warning
+                        new_content = [
+                            {
+                                "text": f"[Content migrated from old format: {old_content[:100]}...]"
+                            }
+                        ]
+                        logger.warning(
+                            f"Unknown content format for message {message_id}: {old_content[:100]}..."
+                        )
+
+                # Update the message with new format
                 conn.execute(
-                    """
-                    ALTER TABLE sessions
-                    ADD COLUMN total_tokens_used INTEGER NOT NULL DEFAULT 0
-                    """
+                    "UPDATE messages SET content = ? WHERE message_id = ?",
+                    (json.dumps(new_content), message_id),
                 )
+
+            except Exception as e:
+                # If parsing fails, preserve content as string
+                logger.error(f"Error migrating message {message_id}: {str(e)}")
+                fallback_content = [
+                    {"text": f"[Content migration error: {old_content[:100]}...]"}
+                ]
+                conn.execute(
+                    "UPDATE messages SET content = ? WHERE message_id = ?",
+                    (json.dumps(fallback_content), message_id),
+                )
+
+        # Update schema version
+        conn.execute(
+            """
+            INSERT INTO schema_version (version, applied_at)
+            VALUES (2, ?)
+            """,
+            (format_datetime(datetime.now(timezone.utc)),),
+        )
 
     @contextmanager
     def get_connection(self):
@@ -195,7 +346,7 @@ class SQLiteChatStorage(StorageInterface):
                 (
                     message.session_id,
                     message.role,
-                    json.dumps(message.content),
+                    message.serialize_message_content(),
                     message.index,
                     format_datetime(message.created_at),
                 ),
@@ -276,7 +427,7 @@ class SQLiteChatStorage(StorageInterface):
             message_id=row["message_id"],
             session_id=row["session_id"],
             role=row["role"],
-            content=json.loads(row["content"]),
+            content=ChatMessage.deserialize_message_content(row["content"]),
             index=row["message_index"],
             created_at=parse_datetime(row["timestamp"]),
         )
@@ -344,11 +495,12 @@ class SQLiteChatStorage(StorageInterface):
                             SELECT 1
                             FROM json_each(m.content) as items
                             WHERE
-                                (json_extract(items.value, '$.type') = 'text' AND
-                                json_extract(items.value, '$.text') LIKE ?)
+                                (json_extract(items.value, '$.text') LIKE ? AND json_extract(items.value, '$.text') IS NOT NULL) OR
+                                (json_extract(items.value, '$.thinking') LIKE ? AND json_extract(items.value, '$.thinking') IS NOT NULL)
                         ))
                         """
                     )
+                    params.append(search_pattern)
                     params.append(search_pattern)
 
                 # Combine conditions for this term
