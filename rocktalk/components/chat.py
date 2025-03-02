@@ -1,13 +1,14 @@
 """Chat interface module for handling user-AI conversations with support for text and images."""
 
 from datetime import datetime
-from typing import Optional, cast
+from typing import Optional
 
 import streamlit as st
+from app_context import AppContext
 from langchain.schema import BaseMessage
-from models.interfaces import ChatMessage, ChatSession, TurnState
-from models.llm import LLMInterface
-from models.storage_interface import StorageInterface
+from models.interfaces import ChatMessage, ChatSession
+from models.llm import LLMInterface, TurnState
+from models.storage.storage_interface import StorageInterface
 from streamlit_chat_prompt import PromptReturn, pin_bottom, prompt
 from streamlit_shortcuts import button
 from utils.js import (
@@ -34,15 +35,16 @@ class ChatInterface:
     storage: StorageInterface
     llm: LLMInterface
 
-    def __init__(self) -> None:
+    def __init__(self, ctx: AppContext) -> None:
         """Initialize the chat interface.
 
         Args:
             storage: Storage interface for persisting chat data.
             llm: Language model interface for generating responses.
         """
-        self.storage: StorageInterface = st.session_state.storage
-        self.llm: LLMInterface = st.session_state.llm
+        self.storage: StorageInterface = ctx.storage
+        self.llm: LLMInterface = ctx.llm
+        self.ctx: AppContext = ctx
 
         if "turn_state" not in st.session_state:
             st.session_state.turn_state = TurnState.HUMAN_TURN
@@ -107,7 +109,7 @@ class ChatInterface:
             ]
 
             if not st.session_state.get("temporary_session", False):
-                st.session_state.storage.delete_messages_from_index(
+                self.storage.delete_messages_from_index(
                     session_id=st.session_state.current_session_id,
                     from_index=original_message.index,
                 )
@@ -125,7 +127,7 @@ class ChatInterface:
                 # Add edited message
                 st.session_state.messages.append(new_message)
                 if not st.session_state.get("temporary_session", False):
-                    st.session_state.storage.save_message(message=new_message)
+                    self.storage.save_message(message=new_message)
 
                 # Set turn state to AI_TURN to generate new response
                 st.session_state.turn_state = TurnState.AI_TURN

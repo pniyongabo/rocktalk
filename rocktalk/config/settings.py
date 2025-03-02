@@ -8,16 +8,9 @@ from typing import Any, Callable, List, Optional, Tuple
 
 import pandas as pd
 import streamlit as st
-from models.interfaces import (
-    ChatExport,
-    ChatMessage,
-    ChatSession,
-    ChatTemplate,
-    LLMConfig,
-    TurnState,
-)
-from models.llm import LLMInterface, model_supports_thinking
-from models.storage_interface import StorageInterface
+from models.interfaces import ChatExport, ChatMessage, ChatSession, ChatTemplate
+from models.llm import LLMConfig, LLMInterface, TurnState, model_supports_thinking
+from models.storage.storage_interface import StorageInterface
 from services.creds import get_cached_aws_credentials
 from utils.log import USER_LOG_LEVEL, get_log_memoryhandler, logger
 
@@ -1052,11 +1045,11 @@ class SettingsManager:
         import_data = ChatExport.model_validate_json(uploaded_file.getvalue())
 
         # Store the imported session
-        st.session_state.storage.store_session(import_data.session)
+        self.storage.store_session(import_data.session)
 
         # Store all messages
         for msg in import_data.messages:
-            st.session_state.storage.save_message(msg)
+            self.storage.save_message(msg)
 
         # Update current session
         st.session_state.current_session_id = import_data.session.session_id
@@ -1103,7 +1096,7 @@ class SettingsManager:
                 use_container_width=True,
             ):
                 if st.session_state.confirm_reset:
-                    st.session_state.storage.delete_all_sessions()
+                    self.storage.delete_all_sessions()
                     self.clear_session()
                     self.rerun_app()
                 else:

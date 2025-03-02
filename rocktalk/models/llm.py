@@ -2,12 +2,14 @@ import os
 import time
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Any, Dict, Iterator, List, Optional
 
 import streamlit as st
 from langchain.schema import AIMessage, BaseMessage, HumanMessage
 from langchain_aws import ChatBedrockConverse
 from langchain_core.messages.base import BaseMessageChunk
+from pydantic import BaseModel, Field
 from services.creds import get_cached_aws_credentials
 from utils.log import logger
 from utils.streamlit_utils import escape_dollarsign
@@ -20,7 +22,22 @@ from .interfaces import (
     LLMConfig,
 )
 from .rate_limiter import TokenRateLimiter
-from .storage_interface import StorageInterface
+from .storage.storage_interface import StorageInterface
+
+
+class TurnState(Enum):
+    """Enum representing the current turn state in the conversation.
+
+    Attributes:
+        HUMAN_TURN: Waiting for human input.
+        AI_TURN: Waiting for AI response.
+        COMPLETE: Conversation is complete.
+    """
+
+    HUMAN_TURN = "human_turn"
+    AI_TURN = "ai_turn"
+    COMPLETE = "complete"
+
 
 MODEL_CONTEXT_LIMITS = {
     # Claude models

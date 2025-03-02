@@ -10,7 +10,7 @@ from components.chat import ChatInterface
 from components.dialogs.session_settings import session_settings
 from config.settings import PAUSE_BEFORE_RELOADING, SettingsManager
 from models.interfaces import ChatExport, ChatMessage, ChatSession
-from models.storage_interface import SearchOperator, StorageInterface
+from models.storage.storage_interface import SearchOperator, StorageInterface
 from streamlit_keywords import keywords_input
 from utils.log import logger
 

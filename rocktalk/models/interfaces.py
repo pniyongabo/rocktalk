@@ -1,18 +1,16 @@
 import json
 import uuid
 from datetime import datetime, timezone
-from enum import Enum
 from functools import partial
-from typing import Any, Dict, List, Optional, Sequence, TypeAlias
+from typing import Any, Dict, List, Optional, TypeAlias
 
 import streamlit as st
 from langchain.schema import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from PIL.ImageFile import ImageFile
 from pydantic import BaseModel, Field, model_validator
 from streamlit_chat_prompt import ImageData, PromptReturn, prompt
-from streamlit_js_eval import streamlit_js_eval
 from utils.image_utils import MAX_IMAGE_WIDTH, image_from_b64_image
-from utils.js import focus_prompt
+from utils.js import copy_value_to_clipboard, focus_prompt
 from utils.log import logger
 from utils.streamlit_utils import (
     OnPillsChange,
@@ -21,53 +19,6 @@ from utils.streamlit_utils import (
     escape_dollarsign,
     on_pills_change,
 )
-
-
-def find_iframe_js():
-    return """
-    function findIFrameFunction(funcName) {
-        console.log('findIFrameFunction: ', funcName);
-        const iframes = window.parent.document.getElementsByClassName("stIFrame");
-        for (let iframe of iframes) {
-            try {
-                console.log('iframe: ', iframe);
-                if (iframe.contentWindow && iframe.contentWindow[funcName]) {
-                    return iframe.contentWindow[funcName];
-                }
-            } catch (err) {
-                console.error('Error accessing iframe:', err);
-            }
-        }
-        return null;
-    }
-    """
-
-
-def expand_button_height(target_key: str):
-    return
-    target_key = json.dumps(f".st-key-{target_key} button")
-    streamlit_js_eval(
-        js_expressions=f"""
-    {find_iframe_js()}
-
-    findIFrameFunction('expandButton')({target_key});
-    """
-    )
-
-
-def copy_value_to_clipboard(value: str):
-    value = json.dumps(value)
-    # with stylized_container("copy_to_clipboard_boo"):
-    streamlit_js_eval(
-        js_expressions=f"""
-    {find_iframe_js()}
-
-    findIFrameFunction('initAndCopy')({value});
-    """
-    )
-    st.toast(body="Copied to clipboard", icon="📋")
-    # See note in chat.py
-    st.session_state.message_copied = 3
 
 
 class ThinkingParameters(BaseModel):
@@ -136,20 +87,6 @@ class LLMConfig(BaseModel):
         ge=100,  # Minimum reasonable limit
         le=10_000_000,  # Maximum reasonable limit
     )
-
-
-class TurnState(Enum):
-    """Enum representing the current turn state in the conversation.
-
-    Attributes:
-        HUMAN_TURN: Waiting for human input.
-        AI_TURN: Waiting for AI response.
-        COMPLETE: Conversation is complete.
-    """
-
-    HUMAN_TURN = "human_turn"
-    AI_TURN = "ai_turn"
-    COMPLETE = "complete"
 
 
 class ChatTemplate(BaseModel):

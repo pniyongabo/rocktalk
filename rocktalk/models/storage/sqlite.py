@@ -7,9 +7,10 @@ from typing import List, Optional, Tuple
 
 from config.settings import LLMConfig
 from models.interfaces import ChatMessage, ChatSession, ChatTemplate
-from models.storage_interface import SearchOperator, StorageInterface
 from utils.datetime_utils import format_datetime, parse_datetime
 from utils.log import logger
+
+from .storage_interface import SearchOperator, StorageInterface
 
 
 class SQLiteChatStorage(StorageInterface):

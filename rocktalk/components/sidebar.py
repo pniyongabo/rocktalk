@@ -1,8 +1,10 @@
+# rocktalk/components/sidebar.py
 from functools import partial
 
 import streamlit as st
+from app_context import AppContext
 from config.settings import SettingsManager
-from models.storage_interface import StorageInterface
+from models.storage.storage_interface import StorageInterface
 from utils.date_utils import create_date_masks
 from utils.streamlit_utils import OnPillsChange, PillOptions, on_pills_change
 
@@ -17,33 +19,46 @@ from .dialogs.template_selector import template_selector_dialog
 class Sidebar:
     """Manages the sidebar UI and session list"""
 
-    def __init__(self, chat_interface: ChatInterface):
-        self.storage: StorageInterface = st.session_state.storage
-        self.chat_interface = chat_interface
+    def __init__(self, ctx: AppContext, chat_interface: ChatInterface):
+        """
+        Initialize the sidebar component.
+
+        Args:
+            ctx: Application context providing access to services
+            chat_interface: Reference to the chat interface for interactions
+        """
+        self.ctx: AppContext = ctx
+        self.storage: StorageInterface = ctx.storage
+        self.chat_interface: ChatInterface = chat_interface
 
     def render(self):
         """Render the complete sidebar"""
         with st.sidebar:
-            if st.session_state.get("authentication_status"):
-                # User is authenticated
-                name = st.session_state.get("name")
-                username = st.session_state.get("username")
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.write(f"Welcome *{name}*")
-                with col2:
-                    if st.button(":material/password:", use_container_width=True):
-                        st.write("Change Password")
-                        # st.dialog("Change Password", "Please enter your new password")
-                        # authenticator.reset_password(username, "main")
-                with col3:
-                    if st.button(":material/logout:", use_container_width=True):
-                        st.session_state.authenticator.logout("logout", "unrendered")
+            self._handle_authentication_ui()
 
             st.title("Chat Sessions")
             self.render_header()
             st.divider()
             self.render_session_list()
+
+    def _handle_authentication_ui(self):
+        """Handle authentication-related UI elements if auth is enabled"""
+        if st.session_state.get("authentication_status"):
+            # User is authenticated
+            name = st.session_state.get("name")
+            username = st.session_state.get("username")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.write(f"Welcome *{name}*")
+            with col2:
+                if st.button(":material/password:", use_container_width=True):
+                    st.write("Change Password")
+                    # st.dialog("Change Password", "Please enter your new password")
+                    # authenticator.reset_password(username, "main")
+            with col3:
+                if st.button(":material/logout:", use_container_width=True):
+                    assert self.ctx.auth is not None
+                    self.ctx.auth.logout("logout", "unrendered")
 
     def render_header(self):
         """Render the header section with New Chat and Settings buttons"""
@@ -186,7 +201,6 @@ class Sidebar:
 
     def apply_header_styles(self, header_key: str):
         """Apply CSS styles to the header section"""
-
         st.markdown(
             f"""
             <style>
@@ -221,9 +235,9 @@ class Sidebar:
     # Action handlers
     def create_new_chat(self, temporary: bool = False):
         """Handle new chat creation"""
-        SettingsManager(storage=self.storage).clear_session()
+        settings_manager = SettingsManager(storage=self.storage)
+        settings_manager.clear_session()
         st.session_state.temporary_session = temporary
-
         # st.rerun() # is a no-op within callback
 
     def load_session(self, session_id: str):
@@ -242,7 +256,7 @@ class Sidebar:
         session_settings(session=self.storage.get_session(session_id=session_id))
 
     def open_search_dialog(self):
-        """Open session settings dialog"""
+        """Open search dialog"""
         SearchInterface.clear_cached_settings_vars()
         search_dialog(
             storage=self.storage,
