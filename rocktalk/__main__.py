@@ -286,14 +286,23 @@ def show_help() -> None:
     ),
     help="Directory for RockTalk configuration and chat database (default: ~/.rocktalk or $ROCKTALK_DIR)",
 )
+@click.option(
+    "--debug",
+    is_flag=True,
+    help="Enable debug mode with verbose logging",
+)
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
-def main(config_dir, args) -> None:
+def main(config_dir, debug, args) -> None:
     """RockTalk - A ChatGPT-like chatbot webapp powered by Amazon Bedrock
 
     Project repository: https://github.com/tahouse/rocktalk
 
     For Streamlit-specific options: streamlit run --help
     """
+    # Set debug logging if flag is enabled
+    if debug:
+        os.environ["ROCKTALK_LOG_LEVEL"] = "DEBUG"
+
     # Load environment variables from .env if present
     setup_logging()
     load_dotenv()

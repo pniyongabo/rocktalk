@@ -46,6 +46,7 @@ dependencies = [
     "streamlit-authenticator>=0.4.1",
     "streamlit-chat-prompt>=0.3.13",
     "streamlit-js-eval>=0.1.7",
+    "streamlit-javascript==0.1.5",
     "streamlit-shortcuts>=0.1.9",
     "streamlit_float>=0.3.5",
     "st-theme>=1.2.3",

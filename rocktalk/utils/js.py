@@ -2,6 +2,7 @@ import json
 
 import streamlit as st
 import streamlit.components.v1 as stcomponents
+from streamlit_javascript import st_javascript
 from streamlit_js_eval import streamlit_js_eval
 
 from .log import logger
@@ -485,8 +486,17 @@ def adjust_chat_message_style():
 
 
 def get_user_timezone() -> str | None:
-    user_timezone = streamlit_js_eval(
-        js_expressions="Intl.DateTimeFormat().resolvedOptions().timeZone",
-        key="get_timezone",
-    )
-    return user_timezone
+    """Get user timezone using streamlit_javascript"""
+    try:
+        # Direct call to get timezone using Intl API
+        timezone = st_javascript("Intl.DateTimeFormat().resolvedOptions().timeZone")
+
+        # Validate we got a string response
+        if isinstance(timezone, str) and timezone:
+            print(f"Detected timezone: {timezone} {type(timezone)}")
+            return timezone
+        else:
+            return None
+    except Exception as e:
+        logger.error(f"Failed to get timezone: {e}")
+        return None

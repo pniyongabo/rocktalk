@@ -1,5 +1,4 @@
 # rocktalk/app_context.py
-import os
 from pathlib import Path
 
 import dotenv
@@ -30,8 +29,11 @@ class AppContext:
 
         # Initialize core services
         self._storage = self._init_storage()
+        st.session_state.storage = self._storage
         self._llm = self._init_llm()
+        st.session_state.llm = self._llm
         self._auth = self._init_auth()
+        st.session_state.auth = self._auth
 
         # Initialize state
         self._init_state()
@@ -56,12 +58,12 @@ class AppContext:
             try:
                 with open(auth_file) as f:
                     config = yaml.load(f, Loader=SafeLoader)
-                auth = stauth.Authenticate(
-                    str(auth_file),
-                    config["cookie"]["name"],
-                    config["cookie"]["key"],
-                    config["cookie"]["expiry_days"],
-                )
+                    auth = stauth.Authenticate(
+                        str(auth_file),
+                        config["cookie"]["name"],
+                        config["cookie"]["key"],
+                        config["cookie"]["expiry_days"],
+                    )
                 logger.debug("Authentication service initialized")
                 return auth
             except Exception as e:
@@ -88,12 +90,6 @@ class AppContext:
 
         if "temporary_session" not in st.session_state:
             st.session_state.temporary_session = False
-
-        if (
-            "user_timezone" not in st.session_state
-            or not st.session_state.user_timezone
-        ):
-            st.session_state.user_timezone = get_user_timezone()
 
     @property
     def storage(self) -> StorageInterface:
@@ -125,16 +121,19 @@ class AppContext:
         if not self.using_auth:
             return True
 
-        if not st.session_state.get("authentication_status"):
-            try:
-                assert self._auth is not None
+        try:
+            if not st.session_state.get("authentication_status"):
+                assert self._auth, "Authentication service not available"
                 self._auth.login("main")
                 if st.session_state.get("authentication_status") is False:
                     st.error("Username/password is incorrect")
                 elif st.session_state.get("authentication_status") is None:
                     st.warning("Please enter your username and password")
-            except Exception as e:
-                st.error(f"Authentication error: {e}")
-            return False
+                return False
+        except Exception as e:
+            logger.error(f"Authentication error: {e}")
+            st.error(f"Authentication system error. Proceeding without authentication.")
+            # Allow access despite auth error
+            return True
 
         return True
