@@ -57,18 +57,19 @@ def main():
     if not ctx.handle_authentication():
         return
 
-    # Only proceed if either:
-    # 1. No authentication is configured
-    # 2. Authentication is configured and user is authenticated
-    # if not authenticator or st.session_state.get("authentication_status"):
-    # Run the app
-    render_header()
     if (
         "next_run_callable" in st.session_state
         and st.session_state.next_run_callable is not None
     ):
         st.session_state.next_run_callable()
         del st.session_state["next_run_callable"]
+
+    # Only proceed if either:
+    # 1. No authentication is configured
+    # 2. Authentication is configured and user is authenticated
+    # if not authenticator or st.session_state.get("authentication_status"):
+    # Run the app
+    render_header()
     render_app(ctx)
 
 

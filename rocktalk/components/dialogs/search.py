@@ -13,6 +13,7 @@ from models.interfaces import ChatExport, ChatMessage, ChatSession
 from models.storage.storage_interface import SearchOperator, StorageInterface
 from streamlit_keywords import keywords_input
 from utils.log import logger
+from utils.streamlit_utils import show_refresh_app_control
 
 
 @st.dialog("Search")
@@ -71,14 +72,7 @@ class SearchInterface:
     def render(self):
         """Render search interface"""
 
-        if st.session_state.refresh_app:
-            with st.container(border=True):
-                st.warning(
-                    "A page refresh is required to see changes applied in the sidebar session history, \nWhen you're done with your search/edits, you can reload by clicking the button below."
-                )
-                if st.button(":material/refresh: Reload", use_container_width=True):
-                    st.session_state.refresh_app = False
-                    st.rerun(scope="app")
+        show_refresh_app_control()
 
         def search_all():
             st.session_state.initial_search_terms = ["*"]

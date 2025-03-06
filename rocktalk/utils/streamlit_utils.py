@@ -8,6 +8,8 @@ import streamlit.components.v1 as components
 # so these can be used interchangeably with both
 # TODO add docs/examples for using these classes/methods
 class PillOptionMap(TypedDict):
+    """Dictionary containing the label and callback for a pill/segmented control option."""
+
     label: str
     callback: Callable[[], None]
 
@@ -16,6 +18,8 @@ PillOptions: TypeAlias = List[PillOptionMap] | Dict[int, PillOptionMap]
 
 
 class OnPillsChange(TypedDict):
+    """Dictionary containing the key of the pill/segmented control component and the mapping of options to their callbacks."""
+
     key: str
     options_map: PillOptions
 
@@ -124,6 +128,7 @@ def escape_dollarsign(raw_string: str) -> str:
 
 
 def close_dialog() -> None:
+    """Close the current dialog by removing the modal from the parent"""
     components.html(
         """\
             <script>
@@ -133,3 +138,15 @@ def close_dialog() -> None:
         height=0,
         scrolling=False,
     )
+
+
+def show_refresh_app_control():
+    """Show a warning message to inform the user that a page refresh is required to see changes applied in the sidebar session history."""
+    if st.session_state.get("refresh_app", False):
+        with st.container(border=True):
+            st.warning(
+                "A page refresh is required to see changes applied in the sidebar session history, \nWhen you're ready, you can reload by clicking the button below."
+            )
+            if st.button(":material/refresh: Reload", use_container_width=True):
+                st.session_state.refresh_app = False
+                st.rerun(scope="app")

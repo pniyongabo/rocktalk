@@ -1,7 +1,7 @@
 [project]
 name = "rocktalk"
-version = "0.5.0"
-description = "A locally running ChatBot WebApp with Streamlit, LangChain, and Amazon Bedrock"
+version = "0.5.1"
+description = "A private and locally running ChatBot WebApp with Streamlit, LangChain, and Amazon Bedrock"
 readme = "README.md"
 authors = [
     { name = "Tyler House", email = "26489166+tahouse@users.noreply.github.com" },

@@ -13,6 +13,7 @@ from models.llm import LLMConfig, LLMInterface, TurnState, model_supports_thinki
 from models.storage.storage_interface import StorageInterface
 from services.creds import get_cached_aws_credentials
 from utils.log import USER_LOG_LEVEL, get_log_memoryhandler, logger
+from utils.streamlit_utils import show_refresh_app_control
 
 from .button_group import ButtonGroupManager
 from .parameter_controls import ParameterControls
@@ -217,6 +218,8 @@ class SettingsManager:
     def render_settings_dialog(self):
         """Render the settings dialog"""
 
+        show_refresh_app_control()
+
         self.render_template_management()
 
         # Check if current model supports thinking and show information if needed
@@ -257,6 +260,8 @@ class SettingsManager:
 
     def render_session_actions(self):
         """Render session action buttons and dialogs"""
+
+        show_refresh_app_control()
 
         # Save settings
         current_template = self._get_matching_template(st.session_state.temp_llm_config)
@@ -438,6 +443,7 @@ class SettingsManager:
         if is_private != self.session.is_private:
             self.session.is_private = is_private
             self.storage.update_session(self.session)
+            st.session_state.refresh_app = True
             self.rerun_dialog()
 
         self.render_template_selector()
@@ -476,6 +482,7 @@ class SettingsManager:
                     del st.session_state["new_generated_title"]
                     self.session.title = new_title
                     success = True
+                    st.session_state.refresh_app = True
 
             with col2:
 
