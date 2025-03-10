@@ -1,12 +1,12 @@
 import streamlit as st
+from app_context import AppContext
 from config.settings import SettingsManager
 from models.interfaces import ChatSession
 
 
 @st.dialog("Session Settings")
-def session_settings(session: ChatSession):
-    storage = st.session_state.storage
-    settings = SettingsManager(session=session, storage=storage)
+def session_settings(app_context: AppContext, session: ChatSession):
+    settings = SettingsManager(app_context=app_context, session=session)
 
     tab1, tab2 = st.tabs(["Settings", "Debug Info"])
 

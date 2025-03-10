@@ -1,4 +1,20 @@
-# rocktalk/app_context.py
+"""
+AppContext Module - Central Service Management
+
+This module implements the AppContext class, which serves as a central service
+locator for the RockTalk application. The AppContext is stored in Streamlit's
+session state for persistence between reruns, and all components access services
+through this context.
+
+Application architecture:
+- AppContext manages initialization and access to all core services
+- AppContext is stored in st.session_state for persistence between reruns
+- Components receive the AppContext instance via dependency injection
+- All service access should go through the AppContext, not directly via session state
+
+This approach combines proper encapsulation with Streamlit's stateful nature.
+"""
+
 from pathlib import Path
 
 import dotenv
@@ -29,11 +45,8 @@ class AppContext:
 
         # Initialize core services
         self._storage = self._init_storage()
-        st.session_state.storage = self._storage
         self._llm = self._init_llm()
-        st.session_state.llm = self._llm
         self._auth = self._init_auth()
-        st.session_state.auth = self._auth
 
         # Initialize state
         self._init_state()

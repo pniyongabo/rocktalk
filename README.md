@@ -96,7 +96,7 @@ This project implements RockTalk, a ChatGPT-like chatbot webapp using Streamlit 
 - **New Temporary Chat**: Click <picture>
       <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/history_toggle_off_light.svg">
       <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/history_toggle_off_dark.svg">
-      <img alt='history_toggle_off' src="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/history_toggle_off_dark.svg" width="12">
+      <img alt='history_toggle_off' src="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/history_toggle_off_dark.svg" width="20">
     </picture> (temporary session) in the sidebar to start a temporary chat session that will not be saved unless you choose to save it. These are ideal for spontaneous conversations where you might not need to keep a record.
   - **Saving a Temporary Session**:
     - If you wish to save a temporary session, click "Save Temporary Session" in the sidebar.
@@ -105,7 +105,7 @@ This project implements RockTalk, a ChatGPT-like chatbot webapp using Streamlit 
 - **New Chat with Template**: Click <picture>
       <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/playlist_add_light.svg">
       <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/playlist_add_dark.svg">
-      <img alt='playlist_add' src="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/playlist_add_dark.svg" width="12">
+      <img alt='playlist_add' src="https://raw.githubusercontent.com/tahouse/rocktalk/main/docs/assets/playlist_add_dark.svg" width="20">
     </picture> (quick template selector) to use a specific template when creating a new chat or temporary chat.
 - Start typing in the chat input box.
 - Use ⌘/⊞ + ⌫ to stop streaming responses.

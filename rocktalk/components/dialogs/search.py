@@ -6,6 +6,7 @@ from functools import partial
 from typing import List
 
 import streamlit as st
+from app_context import AppContext
 from components.chat import ChatInterface
 from components.dialogs.session_settings import session_settings
 from config.settings import PAUSE_BEFORE_RELOADING, SettingsManager
@@ -17,14 +18,16 @@ from utils.streamlit_utils import show_refresh_app_control
 
 
 @st.dialog("Search")
-def search_dialog(storage: StorageInterface, chat_interface: ChatInterface):
-    search_interface = SearchInterface(storage=storage, chat_interface=chat_interface)
+def search_dialog(app_context: AppContext, chat_interface: ChatInterface):
+    search_interface = SearchInterface(
+        app_context=app_context, chat_interface=chat_interface
+    )
     search_interface.render()
 
 
 class SearchInterface:
-    def __init__(self, storage: StorageInterface, chat_interface: ChatInterface):
-        self.storage = storage
+    def __init__(self, app_context: AppContext, chat_interface: ChatInterface):
+        self.ctx = app_context
         self.chat_interface = chat_interface
         SearchInterface.init_state()
 
@@ -171,7 +174,7 @@ class SearchInterface:
 
         try:
             # Get matching sessions
-            matching_sessions = self.storage.search_sessions(
+            matching_sessions = self.ctx.storage.search_sessions(
                 query=terms,
                 operator=filters["operator"],
                 search_titles=filters["titles"],
@@ -182,7 +185,7 @@ class SearchInterface:
             # Format results
             results = []
             for session in matching_sessions:
-                messages = self.storage.get_messages(session.session_id)
+                messages = self.ctx.storage.get_messages(session.session_id)
                 matching_messages = [
                     msg
                     for msg in messages
@@ -219,9 +222,9 @@ class SearchInterface:
                 ):
                     try:
                         for session_id in st.session_state.selected_sessions:
-                            self.storage.delete_session(session_id)
+                            self.ctx.storage.delete_session(session_id)
                             if st.session_state.current_session_id == session_id:
-                                SettingsManager(storage=self.storage).clear_session()
+                                SettingsManager(app_context=self.ctx).clear_session()
 
                         message_container.success(
                             f"Deleted {len(st.session_state.selected_sessions)} "
@@ -272,8 +275,8 @@ class SearchInterface:
         with st.spinner("Preparing export data..."):
             export_data = []
             for session_id in st.session_state.selected_sessions:
-                session = self.storage.get_session(session_id)
-                messages = self.storage.get_messages(session_id)
+                session = self.ctx.storage.get_session(session_id)
+                messages = self.ctx.storage.get_messages(session_id)
                 export_data.append(
                     ChatExport(session=session, messages=messages).model_dump_json()
                 )
@@ -291,7 +294,7 @@ class SearchInterface:
             # Count current private status
             private_count = 0
             for session_id in st.session_state.selected_sessions:
-                session = self.storage.get_session(session_id)
+                session = self.ctx.storage.get_session(session_id)
                 if session.is_private:
                     private_count += 1
 
@@ -299,9 +302,9 @@ class SearchInterface:
             make_private = private_count < len(st.session_state.selected_sessions) / 2
 
             for session_id in st.session_state.selected_sessions:
-                session = self.storage.get_session(session_id)
+                session = self.ctx.storage.get_session(session_id)
                 session.is_private = make_private
-                self.storage.update_session(session)
+                self.ctx.storage.update_session(session)
                 st.session_state.refresh_app = True
             return f"Made {len(st.session_state.selected_sessions)} sessions {'hidden' if make_private else 'visible'}"
 
@@ -415,7 +418,6 @@ class SearchInterface:
                 + f"**{session.title}** ({len(messages)} matches)"
             ):
                 # Session metadata
-                # st.text(f"Created: {session.created_at}")
                 st.text(f"Last active: {session.last_active}")
 
                 st.text(
@@ -442,7 +444,7 @@ class SearchInterface:
                         use_container_width=True,
                     ):
                         SettingsManager(
-                            storage=self.storage
+                            app_context=self.ctx
                         ).clear_cached_settings_vars()
                         # TODO can't open dialog from another dialog!
                         st.session_state.next_run_callable = partial(
@@ -464,9 +466,11 @@ class SearchInterface:
                                 not st.session_state.download_session
                             )
 
-                if st.session_state.get("download_session"):
-                    # messages = self.storage.get_messages(session.session_id)
-                    export_data = ChatExport(session=session, messages=messages)
+                if st.session_state.get("download_session", False):
+                    export_data = ChatExport(
+                        session=session,
+                        messages=self.ctx.storage.get_messages(session.session_id),
+                    )
 
                     st.download_button(
                         ":material/download: Download Session",

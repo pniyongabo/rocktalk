@@ -8,6 +8,7 @@ from typing import Any, Callable, List, Optional, Tuple
 
 import pandas as pd
 import streamlit as st
+from app_context import AppContext
 from models.interfaces import ChatExport, ChatMessage, ChatSession, ChatTemplate
 from models.llm import LLMConfig, LLMInterface, TurnState, model_supports_thinking
 from models.storage.storage_interface import StorageInterface
@@ -73,12 +74,11 @@ class SettingsManager:
 
     def __init__(
         self,
-        storage: StorageInterface,
+        app_context: AppContext,
         session: Optional[ChatSession] = None,
     ):
         self.session = session
-        self.storage = storage
-        self.llm: LLMInterface = st.session_state.llm
+        self.ctx = app_context
         self.current_session_active: bool = bool(
             st.session_state.current_session_id
             or (st.session_state.temporary_session and st.session_state.messages)
@@ -123,11 +123,11 @@ class SettingsManager:
             elif self.current_session_active:
                 # we've opened general settings while a session is active/displayed, use default template
                 st.session_state.temp_llm_config = (
-                    self.storage.get_default_template().config
+                    self.ctx.storage.get_default_template().config
                 )
             else:
                 # general settings, no session active (new chat/session)
-                st.session_state.temp_llm_config = self.llm.get_config().model_copy(
+                st.session_state.temp_llm_config = self.ctx.llm.get_config().model_copy(
                     deep=True
                 )
 
@@ -168,13 +168,13 @@ class SettingsManager:
                     # we're editing general settings while another session is active, Apply will create a new session
                     self.clear_session(config=st.session_state.temp_llm_config)
                 else:
-                    self.llm.update_config(st.session_state.temp_llm_config)
+                    self.ctx.llm.update_config(st.session_state.temp_llm_config)
 
-                    if self.session and self.storage:
+                    if self.session and self.ctx.storage:
                         self.session.title = st.session_state["session_title_input"]
                         self.session.config = st.session_state.temp_llm_config
                         self.session.last_active = datetime.now(timezone.utc)
-                        self.storage.update_session(self.session)
+                        self.ctx.storage.update_session(self.session)
 
                 st.success(body="Settings applied successfully!")
                 time.sleep(PAUSE_BEFORE_RELOADING)
@@ -213,7 +213,7 @@ class SettingsManager:
             del st.session_state["next_run_callable"]
 
         # Update LLM configuration if provided
-        self.llm.update_config(config=config)
+        self.ctx.llm.update_config(config=config)
 
     def render_settings_dialog(self):
         """Render the settings dialog"""
@@ -242,6 +242,7 @@ class SettingsManager:
         self.render_apply_settings()
 
         controls = ParameterControls(
+            app_context=self.ctx,
             read_only=False,
             show_help=True,
         )
@@ -250,7 +251,7 @@ class SettingsManager:
     def render_refresh_credentials(self):
         if st.button("Refresh AWS Credentials"):
             get_cached_aws_credentials()
-            self.llm.update_config(st.session_state.original_config)
+            self.ctx.llm.update_config(st.session_state.original_config)
             st.success("Credentials refreshed successfully!")
 
     @staticmethod
@@ -331,17 +332,19 @@ class SettingsManager:
                         config=(
                             self.session.config.model_copy(deep=True)
                             if copy_settings
-                            else (self.storage.get_default_template().config)
+                            else (self.ctx.storage.get_default_template().config)
                         ),
                     )
 
-                    self.storage.store_session(new_session)
+                    self.ctx.storage.store_session(new_session)
 
                     if copy_messages:
-                        messages = self.storage.get_messages(self.session.session_id)
+                        messages = self.ctx.storage.get_messages(
+                            self.session.session_id
+                        )
                         for msg in messages:
                             msg.session_id = new_session.session_id
-                            self.storage.save_message(msg)
+                            self.ctx.storage.save_message(msg)
                     success = True
 
             with col2:
@@ -369,7 +372,7 @@ class SettingsManager:
 
         session = self.session
         session_id = self.session.session_id
-        messages = self.storage.get_messages(session_id)
+        messages = self.ctx.storage.get_messages(session_id)
 
         st.markdown("# 🔍 Debug Information")
 
@@ -418,10 +421,15 @@ class SettingsManager:
             if "new_generated_title" not in st.session_state:
                 st.session_state.new_generated_title = None
             if st.button(":material/refresh:"):
-                st.session_state.refresh_title_action = True
-                st.session_state.new_generated_title = self.llm.generate_session_title(
-                    self.session
-                )
+                st.session_state.regenerate_title = True
+
+        # Regnerate title
+        if st.session_state.get("regenerate_title", False):
+            st.session_state.new_generated_title = self.ctx.llm.generate_session_title(
+                self.session
+            )
+            st.session_state.regenerate_title = False
+            st.session_state.refresh_title_action = True
 
         # Show confirmation for new title
         if st.session_state.refresh_title_action:
@@ -442,7 +450,7 @@ class SettingsManager:
         )
         if is_private != self.session.is_private:
             self.session.is_private = is_private
-            self.storage.update_session(self.session)
+            self.ctx.storage.update_session(self.session)
             st.session_state.refresh_app = True
             self.rerun_dialog()
 
@@ -452,7 +460,7 @@ class SettingsManager:
 
         # Model settings
         controls = ParameterControls(
-            read_only=False, show_help=True, session=self.session
+            app_context=self.ctx, read_only=False, show_help=True, session=self.session
         )
         controls.render_parameters(st.session_state.temp_llm_config)
 
@@ -476,7 +484,7 @@ class SettingsManager:
                     type="primary",
                     use_container_width=True,
                 ):
-                    self.storage.rename_session(self.session.session_id, new_title)
+                    self.ctx.storage.rename_session(self.session.session_id, new_title)
                     st.session_state.refresh_title_action = False
                     del st.session_state["new_title"]
                     del st.session_state["new_generated_title"]
@@ -533,13 +541,17 @@ class SettingsManager:
                 if st.form_submit_button(
                     ":material/refresh:", help="Generate AI Title"
                 ):
-                    # Generate title using AI
-                    try:
-                        generated_title = self.llm.generate_session_title()
-                        st.session_state.temp_session_title = generated_title
-                        self.rerun_dialog()
-                    except Exception as e:
-                        st.error(f"Error generating title: {e}")
+                    st.session_state.regenerate_title = True
+
+            if st.session_state.get("regenerate_title", False):
+                # Generate title using AI
+                try:
+                    generated_title = self.ctx.llm.generate_session_title()
+                    st.session_state.temp_session_title = generated_title
+                    st.session_state.regenerate_title = False
+                    self.rerun_dialog()
+                except Exception as e:
+                    st.error(f"Error generating title: {e}")
 
             # Save and Cancel buttons
             col1, col2 = st.columns(2)
@@ -557,19 +569,19 @@ class SettingsManager:
             # Handle form submission
             if save_clicked:
                 # Save the session to storage
-                config = self.llm.get_config().model_copy(deep=True)
+                config = self.ctx.llm.get_config().model_copy(deep=True)
                 new_session = ChatSession(
                     title=st.session_state.temp_session_title,
                     config=config,
                     total_tokens_used=st.session_state.get("temp_session_tokens", 0),
                 )
                 st.session_state.current_session_id = new_session.session_id
-                self.storage.store_session(new_session)
+                self.ctx.storage.store_session(new_session)
 
                 # Update session_id for all messages and save them
                 for msg in st.session_state.messages:
                     msg.session_id = new_session.session_id
-                    self.storage.save_message(message=msg)
+                    self.ctx.storage.save_message(message=msg)
 
                 # Clear temporary session flag and update UI
                 st.session_state.temporary_session = False
@@ -587,7 +599,9 @@ class SettingsManager:
     def _export_session(self):
         """Export session data"""
         assert self.session, "Session not initialized"
-        messages: List[ChatMessage] = self.storage.get_messages(self.session.session_id)
+        messages: List[ChatMessage] = self.ctx.storage.get_messages(
+            self.session.session_id
+        )
         export_data = {
             "session": self.session.model_dump(),
             "messages": [msg.model_dump() for msg in messages],
@@ -622,14 +636,14 @@ class SettingsManager:
                     use_container_width=True,
                 ):
                     try:
-                        self.storage.delete_session(self.session.session_id)
+                        self.ctx.storage.delete_session(self.session.session_id)
                         if (
                             self.session.session_id
                             == st.session_state.current_session_id
                         ):
                             st.session_state.current_session_id = None
                             st.session_state.messages = []
-                            self.llm.update_config()
+                            self.ctx.llm.update_config()
                         message_container.success(
                             f"Session '{self.session.title}' deleted"
                         )
@@ -699,7 +713,6 @@ class SettingsManager:
 
     def _show_config_diff(self):
         """Show preview dialog when applying template to session"""
-        assert self.storage, "Storage not initialized"
         assert self.session, "Session not initialized"
 
         st.markdown("### Changes that will be applied:")
@@ -725,8 +738,7 @@ class SettingsManager:
 
     def _get_matching_template(self, config: LLMConfig) -> Optional[ChatTemplate]:
         """Find template matching the given config, if any"""
-        assert self.storage, "Storage not initialized"
-        templates = self.storage.get_chat_templates()
+        templates = self.ctx.storage.get_chat_templates()
         for template in templates:
             if template.config == config:
                 return template
@@ -737,7 +749,7 @@ class SettingsManager:
     ) -> Optional[ChatTemplate]:
         """Shared template selection UI"""
         current_config = st.session_state.temp_llm_config
-        templates: List[ChatTemplate] = self.storage.get_chat_templates()
+        templates: List[ChatTemplate] = self.ctx.storage.get_chat_templates()
 
         # Get currently selected template name from selectbox key in session state, or None on first render
         template_selectbox_key = "template_selectbox_key"
@@ -754,7 +766,7 @@ class SettingsManager:
         template_names = [CUSTOM_TEMPLATE_NAME] + [t.name for t in templates]
 
         if current_selection not in template_names:
-            current_selection = self.storage.get_default_template().name
+            current_selection = self.ctx.storage.get_default_template().name
 
         selected_idx = (
             template_names.index(current_selection)
@@ -777,7 +789,7 @@ class SettingsManager:
             kwargs=dict(selector_key=template_selectbox_key, templates=templates),
         )
         if selected is not None and selected != CUSTOM_TEMPLATE_NAME:
-            return self.storage.get_chat_template_by_name(selected)
+            return self.ctx.storage.get_chat_template_by_name(selected)
         else:
             return None
 
@@ -817,7 +829,7 @@ class SettingsManager:
     def _set_default_template(self, template: ChatTemplate):
         """Set an existing template as default"""
         try:
-            self.storage.set_default_template(template.template_id)
+            self.ctx.storage.set_default_template(template.template_id)
             st.success(f"'{template.name}' set as default template")
             time.sleep(PAUSE_BEFORE_RELOADING)
         except Exception as e:
@@ -968,14 +980,14 @@ class SettingsManager:
             template.name = name
             template.description = description
             template.config = config
-            self.storage.update_chat_template(template)
+            self.ctx.storage.update_chat_template(template)
         else:
             new_template = ChatTemplate(
                 name=name,
                 description=description,
                 config=config,
             )
-            self.storage.store_chat_template(new_template)
+            self.ctx.storage.store_chat_template(new_template)
 
         return True, partial(
             st.success,
@@ -999,7 +1011,7 @@ class SettingsManager:
                     use_container_width=True,
                 ):
                     try:
-                        self.storage.delete_chat_template(template.template_id)
+                        self.ctx.storage.delete_chat_template(template.template_id)
                         message_container.success(f"'{template.name}' template deleted")
                         time.sleep(PAUSE_BEFORE_RELOADING)
                         self.template_actions.rerun()
@@ -1052,11 +1064,11 @@ class SettingsManager:
         import_data = ChatExport.model_validate_json(uploaded_file.getvalue())
 
         # Store the imported session
-        self.storage.store_session(import_data.session)
+        self.ctx.storage.store_session(import_data.session)
 
         # Store all messages
         for msg in import_data.messages:
-            self.storage.save_message(msg)
+            self.ctx.storage.save_message(msg)
 
         # Update current session
         st.session_state.current_session_id = import_data.session.session_id
@@ -1103,7 +1115,7 @@ class SettingsManager:
                 use_container_width=True,
             ):
                 if st.session_state.confirm_reset:
-                    self.storage.delete_all_sessions()
+                    self.ctx.storage.delete_all_sessions()
                     self.clear_session()
                     self.rerun_app()
                 else:

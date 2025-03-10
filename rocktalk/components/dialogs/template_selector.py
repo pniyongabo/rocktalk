@@ -1,12 +1,13 @@
 import streamlit as st
+from app_context import AppContext
 from config.settings import SettingsManager
 
 
 @st.dialog("Template Selector")
-def template_selector_dialog():
+def template_selector_dialog(app_context: AppContext):
     """Dialog for quickly selecting a template for new chat"""
     st.subheader("Select Template for New Chat")
-    settings = SettingsManager(storage=st.session_state.storage)
+    settings = SettingsManager(app_context=app_context)
     template = settings.render_template_selector(include_original=False)
 
     with st.form("template_selector", border=False):

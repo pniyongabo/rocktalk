@@ -5,8 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from config.settings import LLMConfig
-from models.interfaces import ChatMessage, ChatSession, ChatTemplate
+from models.interfaces import ChatMessage, ChatSession, ChatTemplate, LLMConfig
 from utils.datetime_utils import format_datetime, parse_datetime
 from utils.log import logger
 

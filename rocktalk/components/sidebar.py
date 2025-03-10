@@ -33,7 +33,7 @@ class Sidebar(Component):
         """
         super().__init__(ctx)
         self.chat_interface: ChatInterface = chat_interface
-        self._settings_manager = SettingsManager(storage=ctx.storage)
+        self._settings_manager = SettingsManager(app_context=ctx)
 
     def render(self) -> None:
         """Render the complete sidebar"""
@@ -144,7 +144,7 @@ class Sidebar(Component):
 
             if st.session_state.get("temporary_session", False):
                 if st.button("Save Temporary Session", use_container_width=True):
-                    save_temporary_session()
+                    save_temporary_session(app_context=self.ctx)
             else:
                 session = self.ctx.storage.get_session(
                     session_id=st.session_state.current_session_id
@@ -317,7 +317,7 @@ class Sidebar(Component):
     def open_global_settings(self) -> None:
         """Open global settings dialog"""
         self._settings_manager.clear_cached_settings_vars()
-        general_options()
+        general_options(app_context=self.ctx)
         logger.debug("Opened global settings")
 
     def open_session_settings(self, session_id: str) -> None:
@@ -329,14 +329,14 @@ class Sidebar(Component):
         """
         self._settings_manager.clear_cached_settings_vars()
         session = self.ctx.storage.get_session(session_id=session_id)
-        session_settings(session=session)
+        session_settings(app_context=self.ctx, session=session)
         logger.debug(f"Opened settings for session: {session_id}")
 
     def open_search_dialog(self) -> None:
         """Open search dialog"""
         SearchInterface.clear_cached_settings_vars()
         search_dialog(
-            storage=self.ctx.storage,
+            app_context=self.ctx,
             chat_interface=self.chat_interface,
         )
         logger.debug("Opened search dialog")
@@ -344,5 +344,5 @@ class Sidebar(Component):
     def open_template_selector(self) -> None:
         """Open quick template selector dialog"""
         self._settings_manager.clear_cached_settings_vars()
-        template_selector_dialog()
+        template_selector_dialog(app_context=self.ctx)
         logger.debug("Opened template selector")

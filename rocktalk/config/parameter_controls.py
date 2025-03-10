@@ -3,8 +3,9 @@ import functools
 from typing import Any, Literal, Optional
 
 import streamlit as st
+from app_context import AppContext
 from models.interfaces import ChatSession, LLMConfig
-from models.llm import model_supports_thinking
+from models.llm import LLMInterface, model_supports_thinking
 from services.bedrock import BedrockService, FoundationModelSummary
 from utils.log import logger
 from utils.streamlit_utils import OnPillsChange, PillOptions, on_pills_change
@@ -15,6 +16,7 @@ class ParameterControls:
 
     def __init__(
         self,
+        app_context: AppContext,
         read_only: bool = False,
         show_json: bool = False,
         truncate_system_prompt: bool = True,
@@ -22,8 +24,8 @@ class ParameterControls:
         show_help: bool = True,
         session: ChatSession | None = None,
     ):
+        self.ctx = app_context
         self.read_only = read_only
-
         self.show_json = show_json
         self.truncate_system_prompt = truncate_system_prompt
         self.max_system_prompt_lines = max_system_prompt_lines
@@ -652,11 +654,9 @@ class ParameterControls:
             elif hasattr(validator, "le"):
                 max_value = validator.le
 
-        if hasattr(st.session_state, "llm") and hasattr(
-            st.session_state.llm, "_rate_limiter"
-        ):
+        rate_limiter = self.ctx.llm.get_rate_limiter()
+        if rate_limiter:
             try:
-                rate_limiter = st.session_state.llm._rate_limiter
                 usage = rate_limiter.get_current_usage()
                 percentage = rate_limiter.get_usage_percentage()
 

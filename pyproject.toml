@@ -1,6 +1,6 @@
 [project]
 name = "rocktalk"
-version = "0.5.1"
+version = "0.5.2"
 description = "A private and locally running ChatBot WebApp with Streamlit, LangChain, and Amazon Bedrock"
 readme = "README.md"
 authors = [

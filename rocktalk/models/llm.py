@@ -114,11 +114,14 @@ class LLMInterface(ABC):
     @abstractmethod
     def get_config(self) -> LLMConfig: ...
 
+    def get_rate_limiter(self) -> Optional[TokenRateLimiter]:
+        return None
+
     def get_state_system_message(self) -> ChatMessage | None:
         if self.get_config().system:
             return ChatMessage.from_system_message(
-                system_message=st.session_state.llm.get_config().system,
-                session_id=st.session_state.current_session_id,
+                system_message=self.get_config().system,
+                session_id=st.session_state.get("current_session_id"),
             )
         else:
             return None
@@ -140,8 +143,8 @@ class LLMInterface(ABC):
             )
             conversation_messages = self._storage.get_messages(session.session_id)
         else:
-
             system_message = self.get_state_system_message()
+            # Use session_state.messages directly for now as it's part of the component state
             conversation_messages = st.session_state.messages
 
         messages: List[ChatMessage] = [system_message] if system_message else []
@@ -223,6 +226,9 @@ class BedrockLLM(LLMInterface):
             )
 
         self._rate_limiter = TokenRateLimiter(tokens_per_minute=tokens_per_minute)
+
+    def get_rate_limiter(self) -> TokenRateLimiter:
+        return self._rate_limiter
 
     def update_config(self, config: Optional[LLMConfig] = None) -> None:
         if config:
@@ -444,10 +450,10 @@ class BedrockLLM(LLMInterface):
             tokens_used: Number of tokens used in this request
             session_id: Optional session ID. If None, uses current session.
         """
+        target_session_id = session_id or st.session_state.get("current_session_id")
+
         # For temporary sessions, we track in session state
-        if st.session_state.get("temporary_session", False) or not st.session_state.get(
-            "current_session_id"
-        ):
+        if st.session_state.get("temporary_session", False) or not target_session_id:
             if "temp_session_tokens" not in st.session_state:
                 st.session_state.temp_session_tokens = 0
 
@@ -478,8 +484,6 @@ class BedrockLLM(LLMInterface):
                         )
 
             return
-
-        target_session_id = session_id or st.session_state.current_session_id
 
         try:
             # Get the session from storage
