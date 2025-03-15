@@ -5,7 +5,7 @@ from typing import Any, Literal, Optional
 import streamlit as st
 from app_context import AppContext
 from models.interfaces import ChatSession, LLMConfig
-from models.llm import LLMInterface, model_supports_thinking
+from models.llm import MODEL_CONTEXT_LIMITS, LLMInterface, model_supports_thinking
 from services.bedrock import BedrockService, FoundationModelSummary
 from utils.log import logger
 from utils.streamlit_utils import OnPillsChange, PillOptions, on_pills_change
@@ -330,7 +330,7 @@ class ParameterControls:
 
         # Enable/disable thinking
         thinking_enabled = st.checkbox(
-            "Enable Extended Thinking",
+            "Extended Thinking",
             value=config.parameters.thinking.enabled,
             key=thinking_enabled_key,
             help=(
@@ -531,6 +531,11 @@ class ParameterControls:
                 st.session_state.temp_llm_config.parameters.max_output_tokens,
                 BedrockService.get_max_output_tokens(model_id),
             )
+        if not model_supports_thinking(model_id):
+            st.session_state.temp_llm_config.parameters.thinking.enabled = False
+            logger.debug(
+                f"Disabling thinking for model because extended thinking is not supported: {model_id}"
+            )
         st.session_state.current_provider = provider
 
     @staticmethod
@@ -705,34 +710,49 @@ class ParameterControls:
         """Render token usage statistics"""
         # For session-specific view, use the session data directly
         if self.session:
-            total_tokens = getattr(self.session, "total_tokens_used", 0)
-            if total_tokens == 0:
-                return  # No usage to display
-
-            # Get model context limit from MODEL_CONTEXT_LIMITS
-            from models.llm import MODEL_CONTEXT_LIMITS
+            input_tokens = getattr(self.session, "input_tokens_used", 0)
+            output_tokens = getattr(self.session, "output_tokens_used", 0)
 
             model_id = config.bedrock_model_id
             model_limit = MODEL_CONTEXT_LIMITS.get(
                 model_id, MODEL_CONTEXT_LIMITS["default"]
             )
-            context_percent = (total_tokens / model_limit * 100) if model_limit else 0
 
+            # Calculate context window usage based on input tokens only
+            context_percent = (input_tokens / model_limit * 100) if model_limit else 0
+
+            # Display input tokens (used for context window)
             st.metric(
-                "Tokens Used",
-                f"{total_tokens:,}",
-                f"{context_percent:.1f}%",
+                "Input Tokens",
+                f"{input_tokens:,}",
+                f"{context_percent:.1f}% of context",
                 delta_color="inverse" if context_percent > 75 else "normal",
             )
 
-            # Display token usage information
+            # Display output tokens
+            st.metric(
+                "Output Tokens",
+                f"{output_tokens:,}",
+                help="Including completion and thinking tokens",
+            )
+
+            # # Display total tokens (for cost estimation)
+            # st.metric(
+            #     "Total Tokens",
+            #     f"{total_tokens:,}",
+            #     help="Total tokens used (input + output) for cost estimation",
+            # )
+
+            # Display context window usage information
             st.caption(
-                f"Context window usage ({total_tokens:,}/{model_limit:,} tokens)"
+                f"Context window usage ({input_tokens:,}/{model_limit:,} input tokens)"
             )
             st.progress(min(context_percent / 100, 1.0))
 
             if context_percent > 90:
-                st.warning("⚠️ Approaching context limit. Consider starting a new chat.")
+                st.warning(
+                    "⚠️ Approaching context window limit. Consider starting a new chat."
+                )
 
             st.divider()
 

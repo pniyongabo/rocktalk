@@ -102,7 +102,8 @@ class UserInput(Component):
         new_session: ChatSession = ChatSession(
             title=f"New Chat {datetime.now().isoformat()}",  # Temporary title until first AI response
             config=config,
-            total_tokens_used=st.session_state.get("temp_session_tokens", 0),
+            input_tokens_used=st.session_state.get("temp_session_input_tokens", 0),
+            output_tokens_used=st.session_state.get("temp_session_output_tokens", 0),
         )
         st.session_state.current_session_id = new_session.session_id
         st.session_state.needs_title_generation = (

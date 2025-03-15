@@ -82,7 +82,9 @@ class LLMConfig(BaseModel):
     )
 
     rate_limit: int = Field(
-        default=800_000,  # https://docs.aws.amazon.com/general/latest/gr/bedrock.html
+        # TODO look up based on model? https://us-west-2.console.aws.amazon.com/servicequotas/home/services/bedrock/quotas
+        # aws service-quotas  list-service-quotas --service-code "bedrock"
+        default=1_000_000,  # https://docs.aws.amazon.com/general/latest/gr/bedrock.html
         description="Maximum tokens per minute to process",
         ge=100,  # Minimum reasonable limit
         le=10_000_000,  # Maximum reasonable limit
@@ -483,7 +485,8 @@ class ChatSession(BaseModel):
     created_at: datetime = Field(default_factory=partial(datetime.now, timezone.utc))
     last_active: datetime = Field(default_factory=partial(datetime.now, timezone.utc))
     is_private: bool = False
-    total_tokens_used: int = 0
+    input_tokens_used: int = 0
+    output_tokens_used: int = 0
 
 
 class ChatExport(BaseModel):

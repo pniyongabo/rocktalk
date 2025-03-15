@@ -1,13 +1,15 @@
 import os
+import pprint
 import time
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Dict, Iterator, List, Optional, cast
 
 import streamlit as st
 from langchain.schema import AIMessage, BaseMessage, HumanMessage
 from langchain_aws import ChatBedrockConverse
+from langchain_core.messages.ai import AIMessageChunk, UsageMetadata
 from langchain_core.messages.base import BaseMessageChunk
 from pydantic import BaseModel, Field
 from services.creds import get_cached_aws_credentials
@@ -305,44 +307,44 @@ class BedrockLLM(LLMInterface):
             )
         self._init_rate_limiter()  # Re-initialize rate limiter when config changes
 
-    def _extract_token_usage(self, usage_data: Optional[Dict]) -> Dict[str, int]:
-        """Extract token usage from Bedrock response metadata
+    # def _extract_token_usage(self, usage_data: UsageMetadata | None) -> Dict[str, int]:
+    #     """Extract token usage from Bedrock response metadata
 
-        Args:
-            usage_data: Usage metadata from Bedrock response
+    #     Args:
+    #         usage_data: Usage metadata from Bedrock response
 
-        Returns:
-            Dictionary with token usage counts
-        """
-        # Initialize with zeros
-        result = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+    #     Returns:
+    #         Dictionary with token usage counts
+    #     """
+    #     # Initialize with zeros
+    #     result = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
 
-        if not usage_data:
-            return result
+    #     if usage_data is None:
+    #         return result
 
-        # Check if data is nested (as shown in your example)
-        if isinstance(usage_data, dict):
-            # Sometimes the usage data may be directly accessible
-            if "input_tokens" in usage_data:
-                result["input_tokens"] = usage_data.get("input_tokens", 0)
-                result["output_tokens"] = usage_data.get("output_tokens", 0)
-                result["total_tokens"] = usage_data.get("total_tokens", 0)
+    #     # Check if data is nested (as shown in your example)
+    #     if isinstance(usage_data, dict):
+    #         # Sometimes the usage data may be directly accessible
+    #         if "input_tokens" in usage_data:
+    #             result["input_tokens"] = usage_data.get("input_tokens", 0)
+    #             result["output_tokens"] = usage_data.get("output_tokens", 0)
+    #             result["total_tokens"] = usage_data.get("total_tokens", 0)
 
-            # For Claude and other models that use different key structures
-            elif "promptTokenCount" in usage_data:
-                result["input_tokens"] = usage_data.get("promptTokenCount", 0)
-                result["output_tokens"] = usage_data.get("completionTokenCount", 0)
-                result["total_tokens"] = (
-                    result["input_tokens"] + result["output_tokens"]
-                )
+    #         # For Claude and other models that use different key structures
+    #         elif "promptTokenCount" in usage_data:
+    #             result["input_tokens"] = usage_data.get("promptTokenCount", 0)
+    #             result["output_tokens"] = usage_data.get("completionTokenCount", 0)
+    #             result["total_tokens"] = (
+    #                 result["input_tokens"] + result["output_tokens"]
+    #             )
 
-        # If total_tokens is still 0, calculate it from input and output
-        if result["total_tokens"] == 0 and (
-            result["input_tokens"] > 0 or result["output_tokens"] > 0
-        ):
-            result["total_tokens"] = result["input_tokens"] + result["output_tokens"]
+    #     # If total_tokens is still 0, calculate it from input and output
+    #     if result["total_tokens"] == 0 and (
+    #         result["input_tokens"] > 0 or result["output_tokens"] > 0
+    #     ):
+    #         result["total_tokens"] = result["input_tokens"] + result["output_tokens"]
 
-        return result
+    #     return result
 
     def _estimate_tokens(self, messages: List[BaseMessage]) -> int:
         """Estimate the number of tokens for input messages.
@@ -380,14 +382,17 @@ class BedrockLLM(LLMInterface):
         """
         # Check for temporary session first
         if st.session_state.get("temporary_session", False):
-            temp_tokens = st.session_state.get("temp_session_tokens", 0)
+            input_tokens = st.session_state.get("temp_session_input_tokens", 0)
+            output_tokens = st.session_state.get("temp_session_output_tokens", 0)
             model_limit = self.get_model_context_limit()
             context_used_percent = (
-                (temp_tokens / model_limit) * 100 if model_limit > 0 else 0
+                (input_tokens / model_limit) * 100 if model_limit > 0 else 0
             )
 
             return {
-                "total_tokens": temp_tokens,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": input_tokens + output_tokens,
                 "model_limit": model_limit,
                 "context_used_percent": context_used_percent,
                 "rate_limit": self._rate_limiter.tokens_per_minute,
@@ -402,6 +407,8 @@ class BedrockLLM(LLMInterface):
         if not target_session_id:
             return {
                 "total_tokens": 0,
+                "input_tokens": 0,
+                "output_tokens": 0,
                 "model_limit": self.get_model_context_limit(),
                 "context_used_percent": 0,
                 "rate_limit": self._rate_limiter.tokens_per_minute,
@@ -413,14 +420,21 @@ class BedrockLLM(LLMInterface):
             session = self._storage.get_session(target_session_id)
             model_limit = self.get_model_context_limit()
 
-            # If session doesn't have total_tokens_used attribute yet, assume 0
-            total_tokens = getattr(session, "total_tokens_used", 0)
+            # Get input/output tokens, defaulting to 0 if not present
+            input_tokens = getattr(session, "input_tokens_used", 0)
+            output_tokens = getattr(session, "output_tokens_used", 0)
+
+            # Calculate context window usage based on input tokens only
+            # TODO what if user deletes messages, we'll need to update this per reduced input size -- maybe response metadata is enough?
+            # in other words, we want the current input tokens, not the cumulative input tokens
             context_used_percent = (
-                (total_tokens / model_limit) * 100 if model_limit > 0 else 0
+                (input_tokens / model_limit) * 100 if model_limit > 0 else 0
             )
 
             return {
-                "total_tokens": total_tokens,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": input_tokens + output_tokens,
                 "model_limit": model_limit,
                 "context_used_percent": context_used_percent,
                 "rate_limit": self._rate_limiter.tokens_per_minute,
@@ -442,44 +456,47 @@ class BedrockLLM(LLMInterface):
             }
 
     def _update_session_tokens(
-        self, tokens_used: int, session_id: Optional[str] = None
+        self, input_tokens: int, output_tokens: int, session_id: Optional[str] = None
     ) -> None:
-        """Update token count for the current session
+        """Update token counts for the current session
 
         Args:
-            tokens_used: Number of tokens used in this request
+            input_tokens: Number of input tokens used in this request
+            output_tokens: Number of output tokens used in this request
             session_id: Optional session ID. If None, uses current session.
         """
         target_session_id = session_id or st.session_state.get("current_session_id")
 
         # For temporary sessions, we track in session state
         if st.session_state.get("temporary_session", False) or not target_session_id:
-            if "temp_session_tokens" not in st.session_state:
-                st.session_state.temp_session_tokens = 0
+            if "temp_session_input_tokens" not in st.session_state:
+                st.session_state.temp_session_input_tokens = 0
+            if "temp_session_output_tokens" not in st.session_state:
+                st.session_state.temp_session_output_tokens = 0
 
-            st.session_state.temp_session_tokens = tokens_used
+            st.session_state.temp_session_input_tokens += input_tokens
+            st.session_state.temp_session_output_tokens += output_tokens
 
             # Log milestone achievements for temp session
-            if st.session_state.temp_session_tokens % 10_000 < tokens_used:
+            total_input_tokens = st.session_state.temp_session_input_tokens
+            if total_input_tokens % 10_000 < input_tokens:
                 logger.info(
-                    f"Temporary session reached {st.session_state.temp_session_tokens:,} total tokens"
+                    f"Temporary session reached {total_input_tokens:,} total input tokens"
                 )
 
-                # Warn if approaching model limit
+                # Warn if approaching model limit based on input tokens
                 model_limit = self.get_model_context_limit()
-                usage_percent = (
-                    st.session_state.temp_session_tokens / model_limit
-                ) * 100
+                usage_percent = (total_input_tokens / model_limit) * 100
                 if usage_percent > 75:
                     logger.warning(
                         f"Temporary session is using {usage_percent:.1f}% "
-                        f"of model's context limit ({st.session_state.temp_session_tokens:,}/{model_limit:,})"
+                        f"of model's context window ({total_input_tokens:,}/{model_limit:,} input tokens)"
                     )
 
                     if usage_percent > 90:
                         st.warning(
-                            f"⚠️ This conversation is using {usage_percent:.1f}% of the model's "
-                            f"context limit ({st.session_state.temp_session_tokens:,}/{model_limit:,} tokens). "
+                            f"⚠️ This conversation is approaching {usage_percent:.1f}% of the model's "
+                            f"context window ({total_input_tokens:,}/{model_limit:,} input tokens). "
                             f"Consider saving and starting a new chat soon."
                         )
 
@@ -489,40 +506,74 @@ class BedrockLLM(LLMInterface):
             # Get the session from storage
             session = self._storage.get_session(target_session_id)
 
-            # If total_tokens_used doesn't exist yet, add it
-            if not hasattr(session, "total_tokens_used"):
-                session.total_tokens_used = 0
+            # Initialize token counters if they don't exist
+            if not hasattr(session, "input_tokens_used"):
+                session.input_tokens_used = 0
+            if not hasattr(session, "output_tokens_used"):
+                session.output_tokens_used = 0
 
-            # Update token count
-            session.total_tokens_used += tokens_used
+            # Update token counts
+            session.input_tokens_used += input_tokens
+            session.output_tokens_used += output_tokens
 
             # Save updated session
             self._storage.update_session(session)
 
-            # Log milestone achievements
-            if session.total_tokens_used % 10_000 < tokens_used:
+            # Log milestone achievements based on input tokens
+            if session.input_tokens_used % 10_000 < input_tokens:
                 logger.info(
-                    f"Session '{session.title}' reached {session.total_tokens_used:,} total tokens"
+                    f"Session '{session.title}' reached {session.input_tokens_used:,} input tokens"
                 )
 
-                # Warn if approaching model limit
+                # Warn if approaching model limit based on input tokens
                 model_limit = self.get_model_context_limit()
-                usage_percent = (session.total_tokens_used / model_limit) * 100
+                usage_percent = (session.input_tokens_used / model_limit) * 100
                 if usage_percent > 75:
                     logger.warning(
                         f"Session '{session.title}' is using {usage_percent:.1f}% "
-                        f"of model's context limit ({session.total_tokens_used:,}/{model_limit:,})"
+                        f"of model's context window ({session.input_tokens_used:,}/{model_limit:,} input tokens)"
                     )
 
                     if usage_percent > 90:
                         st.warning(
-                            f"⚠️ This conversation is using {usage_percent:.1f}% of the model's "
-                            f"context limit ({session.total_tokens_used:,}/{model_limit:,} tokens). "
+                            f"⚠️ This conversation is approaching {usage_percent:.1f}% of the model's "
+                            f"context window ({session.input_tokens_used:,}/{model_limit:,} input tokens). "
                             f"Consider starting a new chat soon."
                         )
 
         except Exception as e:
-            logger.warning(f"Failed to update session token count: {e}")
+            logger.warning(f"Failed to update session token counts: {e}")
+
+    def handle_usage_data(self, usage_data: UsageMetadata) -> None:
+        # Update rate limiter with total tokens
+        self._rate_limiter.update_usage(usage_data["input_tokens"])
+
+        # Update session token tracking with separate input/output counts
+        self._update_session_tokens(
+            input_tokens=usage_data["input_tokens"],
+            output_tokens=usage_data["output_tokens"],
+            session_id=st.session_state.current_session_id,
+        )
+
+        # Log token usage details
+        session_type = (
+            "Temporary"
+            if st.session_state.get("temporary_session", False)
+            else "Session"
+        )
+        session_tokens = (
+            st.session_state.temp_session_tokens
+            if st.session_state.get("temporary_session", False)
+            else self.get_token_usage_stats().get("total_tokens", 0)
+        )
+
+        logger.info(
+            f"Request used {usage_data['total_tokens']:,} tokens "
+            f"({usage_data['input_tokens']:,} input, {usage_data['output_tokens']:,} output). "
+            f"{session_type} total: {session_tokens:,}. "
+            f"Rate usage: {self._rate_limiter.get_current_usage():,}/{self._rate_limiter.tokens_per_minute:,} tokens/min "
+            f"({self._rate_limiter.get_usage_percentage():.1f}%)"
+        )
 
     def stream(self, input: List[BaseMessage]) -> Iterator[Dict[str, Any]]:
         """Stream a response with rate limiting, processing thinking blocks internally.
@@ -569,7 +620,7 @@ class BedrockLLM(LLMInterface):
                 time.sleep(wait_time)
 
         # Track state
-        usage_data = None
+        usage_data: UsageMetadata | None = None
         current_thinking_block = ""
         current_thinking_signature = None
         current_text_block = ""
@@ -578,12 +629,12 @@ class BedrockLLM(LLMInterface):
         try:
             # Process chunks from the LLM stream
             for chunk in self._llm.stream(input=input):
+                chunk = cast(AIMessageChunk, chunk)
+                logger.info(f"Chunk received: {pprint.pformat(chunk)}")
                 # Extract usage data if available
-                if (
-                    hasattr(chunk, "additional_kwargs")
-                    and "usage_metadata" in chunk.additional_kwargs
-                ):
-                    usage_data = chunk.additional_kwargs["usage_metadata"]
+                if chunk.usage_metadata:
+                    usage_data = chunk.usage_metadata
+                    logger.info(f"Chunk usage_metadata: {pprint.pformat(usage_data)}")
 
                 # Process content
                 if isinstance(chunk.content, str):
@@ -667,6 +718,16 @@ class BedrockLLM(LLMInterface):
                     index=len(st.session_state.messages),
                     session_id=st.session_state.get("current_session_id", ""),
                 )
+
+                # logger.info("test")
+
+                logger.debug(
+                    f"Saving assistant message: {pprint.pformat(assistant_message)}"
+                )
+                logger.info(
+                    f"Saving assistant message: {pprint.pformat(assistant_message)}"
+                )
+
                 # Store in session state
                 st.session_state.messages.append(assistant_message)
                 if not st.session_state.get(
@@ -677,47 +738,10 @@ class BedrockLLM(LLMInterface):
 
         finally:
             # After stream completes (or errors), extract and update token usage
-            token_usage = self._extract_token_usage(usage_data)
+            if usage_data:
+                self.handle_usage_data(usage_data)
 
-            # If we couldn't get actual token count, use our estimate
-            if token_usage["total_tokens"] == 0:
-                logger.warning("No token usage data available, using estimate")
-                token_usage = {
-                    "input_tokens": estimated_input_tokens,
-                    "output_tokens": estimated_total - estimated_input_tokens,
-                    "total_tokens": estimated_total,
-                }
-
-            # Update rate limiter with total tokens
-            self._rate_limiter.update_usage(token_usage["total_tokens"])
-
-            # Update session token tracking
-            self._update_session_tokens(
-                tokens_used=token_usage["total_tokens"],
-                session_id=st.session_state.current_session_id,
-            )
-
-            # Log token usage details
-            session_type = (
-                "Temporary"
-                if st.session_state.get("temporary_session", False)
-                else "Session"
-            )
-            session_tokens = (
-                st.session_state.temp_session_tokens
-                if st.session_state.get("temporary_session", False)
-                else self.get_token_usage_stats().get("total_tokens", 0)
-            )
-
-            logger.info(
-                f"Request used {token_usage['total_tokens']:,} tokens "
-                f"({token_usage['input_tokens']:,} input, {token_usage['output_tokens']:,} output). "
-                f"{session_type} total: {session_tokens:,}. "
-                f"Rate usage: {self._rate_limiter.get_current_usage():,}/{self._rate_limiter.tokens_per_minute:,} tokens/min "
-                f"({self._rate_limiter.get_usage_percentage():.1f}%)"
-            )
-
-    def invoke(self, input: List[BaseMessage]) -> BaseMessage:
+    def invoke(self, input: list[BaseMessage]) -> AIMessage:
         """Invoke the model with rate limiting"""
         # Estimate token usage
         estimated_input_tokens = self._estimate_tokens(input)
@@ -752,68 +776,27 @@ class BedrockLLM(LLMInterface):
                 time.sleep(wait_time)
 
         # Get response
-        response = self._llm.invoke(input=input)
+        response: AIMessage = cast(AIMessage, self._llm.invoke(input=input))
+        logger.debug(f"Response: {pprint.pformat(response)}")
+        logger.info(f"Response: {pprint.pformat(response)}")
 
         # Extract token usage
-        usage_data = None
-        if (
-            hasattr(response, "additional_kwargs")
-            and "usage_metadata" in response.additional_kwargs
-        ):
-            usage_data = response.additional_kwargs["usage_metadata"]
+        usage_data = response.usage_metadata
+        if usage_data:
+            self.handle_usage_data(usage_data)
 
-        # Process thinking blocks for logging
-        has_thinking = False
-        if (
-            hasattr(response, "content")
-            and isinstance(response.content, list)
-            and any(
-                isinstance(item, dict)
-                and item.get("type") in ["thinking", "redacted_thinking"]
-                for item in response.content
-            )
-        ):
-            logger.debug("Received thinking block in response")
-            has_thinking = True
-
-        token_usage = self._extract_token_usage(usage_data)
-
-        # If we couldn't get actual token count, use our estimate
-        if token_usage["total_tokens"] == 0:
-            logger.warning("No token usage data available, using estimate")
-            token_usage = {
-                "input_tokens": estimated_input_tokens,
-                "output_tokens": estimated_total - estimated_input_tokens,
-                "total_tokens": estimated_total,
-            }
-
-        # Update rate limiter
-        self._rate_limiter.update_usage(token_usage["total_tokens"])
-
-        # Update session token tracking
-        self._update_session_tokens(
-            tokens_used=token_usage["total_tokens"],
-            session_id=st.session_state.current_session_id,
-        )
-
-        # Log token usage
-        session_type = (
-            "Temporary"
-            if st.session_state.get("temporary_session", False)
-            else "Session"
-        )
-        session_tokens = (
-            st.session_state.temp_session_tokens
-            if st.session_state.get("temporary_session", False)
-            else self.get_token_usage_stats().get("total_tokens", 0)
-        )
-
-        logger.info(
-            f"Request used {token_usage['total_tokens']:,} tokens "
-            f"({token_usage['input_tokens']:,} input, {token_usage['output_tokens']:,} output). "
-            f"{session_type} total: {session_tokens:,}. "
-            f"Rate usage: {self._rate_limiter.get_current_usage():,}/{self._rate_limiter.tokens_per_minute:,} tokens/min "
-            f"({self._rate_limiter.get_usage_percentage():.1f}%)"
-        )
+        # # Process thinking blocks for logging
+        # has_thinking = False
+        # if (
+        #     hasattr(response, "content")
+        #     and isinstance(response.content, list)
+        #     and any(
+        #         isinstance(item, dict)
+        #         and item.get("type") in ["thinking", "redacted_thinking"]
+        #         for item in response.content
+        #     )
+        # ):
+        #     logger.debug("Received thinking block in response")
+        #     has_thinking = True
 
         return response

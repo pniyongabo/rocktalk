@@ -67,9 +67,9 @@ class SQLiteChatStorage(StorageInterface):
             if current_version < 2 and target_version >= 2:
                 self._migrate_to_v2(conn)
 
-            # Add future migrations here...
-            # if current_version < 3 and target_version >= 3:
-            #     self._migrate_to_v3(conn)
+            # Add token tracking migration
+            if current_version < 3 and target_version >= 3:
+                self._migrate_to_v3(conn)
 
     def _migrate_to_v1(self, conn) -> None:
         """Migration for version 1: Adding session columns"""
@@ -91,19 +91,25 @@ class SQLiteChatStorage(StorageInterface):
                 """
             )
 
-        # Check if total_tokens_used column exists
+        # Check if input_tokens_used column exists
         cursor = conn.execute(
             """
             SELECT name FROM pragma_table_info('sessions')
-            WHERE name='total_tokens_used'
+            WHERE name='input_tokens_used'
             """
         )
         if not cursor.fetchone():
-            logger.info("Adding total_tokens_used column to sessions table")
+            logger.info("Adding input/output token columns to sessions table")
             conn.execute(
                 """
                 ALTER TABLE sessions
-                ADD COLUMN total_tokens_used INTEGER NOT NULL DEFAULT 0
+                ADD COLUMN input_tokens_used INTEGER NOT NULL DEFAULT 0
+                """
+            )
+            conn.execute(
+                """
+                ALTER TABLE sessions
+                ADD COLUMN output_tokens_used INTEGER NOT NULL DEFAULT 0
                 """
             )
 
@@ -115,6 +121,9 @@ class SQLiteChatStorage(StorageInterface):
             """,
             (format_datetime(datetime.now(timezone.utc)),),
         )
+
+    # Update CURRENT_SCHEMA_VERSION at the top of the class
+    CURRENT_SCHEMA_VERSION = 3
 
     def _migrate_to_v2(self, conn) -> None:
         """Migration for version 2: Message content format"""
@@ -205,6 +214,82 @@ class SQLiteChatStorage(StorageInterface):
             (format_datetime(datetime.now(timezone.utc)),),
         )
 
+    def _migrate_to_v3(self, conn) -> None:
+        """Migration for version 3: Separate token tracking"""
+        logger.info("Migrating database to schema version 3")
+
+        # Add new token columns
+        conn.execute(
+            """
+            ALTER TABLE sessions
+            ADD COLUMN input_tokens_used INTEGER NOT NULL DEFAULT 0
+            """
+        )
+        conn.execute(
+            """
+            ALTER TABLE sessions
+            ADD COLUMN output_tokens_used INTEGER NOT NULL DEFAULT 0
+            """
+        )
+
+        # Copy existing total_tokens_used to input_tokens_used
+        # We'll assume all existing tokens were input tokens to be conservative
+        conn.execute(
+            """
+            UPDATE sessions
+            SET input_tokens_used = total_tokens_used
+            WHERE total_tokens_used IS NOT NULL
+            """
+        )
+
+        # Drop the old column
+        # SQLite doesn't support DROP COLUMN before version 3.35.0
+        # So we need to do it the hard way by creating a new table
+        conn.execute(
+            """
+            CREATE TABLE sessions_new (
+                session_id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                created_at TIMESTAMP NOT NULL,
+                last_active TIMESTAMP NOT NULL,
+                config TEXT NOT NULL,
+                is_private BOOLEAN NOT NULL DEFAULT 0,
+                input_tokens_used INTEGER NOT NULL DEFAULT 0,
+                output_tokens_used INTEGER NOT NULL DEFAULT 0
+            )
+            """
+        )
+
+        # Copy data to new table
+        conn.execute(
+            """
+            INSERT INTO sessions_new
+            SELECT
+                session_id,
+                title,
+                created_at,
+                last_active,
+                config,
+                is_private,
+                input_tokens_used,
+                output_tokens_used
+            FROM sessions
+            """
+        )
+
+        # Drop old table and rename new one
+        conn.execute("DROP TABLE sessions")
+        conn.execute("ALTER TABLE sessions_new RENAME TO sessions")
+
+        # Update schema version
+        conn.execute(
+            """
+            INSERT INTO schema_version (version, applied_at)
+            VALUES (3, ?)
+            """,
+            (format_datetime(datetime.now(timezone.utc)),),
+        )
+
     @contextmanager
     def get_connection(self):
         """Create a new connection with row factory for dict results"""
@@ -255,7 +340,8 @@ class SQLiteChatStorage(StorageInterface):
                     last_active TIMESTAMP NOT NULL,
                     config TEXT NOT NULL,
                     is_private BOOLEAN NOT NULL DEFAULT 0,
-                    total_tokens_used INTEGER NOT NULL DEFAULT 0
+                    input_tokens_used INTEGER NOT NULL DEFAULT 0,
+                    output_tokens_used INTEGER NOT NULL DEFAULT 0
                 );
 
                 CREATE TABLE IF NOT EXISTS messages (
@@ -296,13 +382,12 @@ class SQLiteChatStorage(StorageInterface):
             self._migrate_db()
 
     def store_session(self, session: ChatSession) -> None:
-
         with self.get_connection() as conn:
             conn.execute(
                 """
                 INSERT INTO sessions
-                (session_id, title, created_at, last_active, config, is_private, total_tokens_used)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (session_id, title, created_at, last_active, config, is_private, input_tokens_used, output_tokens_used)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     session.session_id,
@@ -311,7 +396,8 @@ class SQLiteChatStorage(StorageInterface):
                     format_datetime(session.last_active),
                     session.config.model_dump_json(),
                     session.is_private,
-                    session.total_tokens_used,
+                    session.input_tokens_used,
+                    session.output_tokens_used,
                 ),
             )
 
@@ -320,7 +406,7 @@ class SQLiteChatStorage(StorageInterface):
             conn.execute(
                 """
                 UPDATE sessions
-                SET title = ?, last_active = ?, config = ?, is_private = ?, total_tokens_used = ?
+                SET title = ?, last_active = ?, config = ?, is_private = ?, input_tokens_used = ?, output_tokens_used = ?
                 WHERE session_id = ?
             """,
                 (
@@ -328,7 +414,8 @@ class SQLiteChatStorage(StorageInterface):
                     format_datetime(session.last_active),
                     json.dumps(session.config.model_dump()),
                     session.is_private,
-                    session.total_tokens_used,
+                    session.input_tokens_used,
+                    session.output_tokens_used,
                     session.session_id,
                 ),
             )
@@ -442,7 +529,8 @@ class SQLiteChatStorage(StorageInterface):
             last_active=parse_datetime(session_data["last_active"]),
             config=LLMConfig.model_validate_json(session_data["config"], strict=True),
             is_private=bool(session_data.get("is_private", False)),
-            total_tokens_used=session_data.get("total_tokens_used", 0),
+            input_tokens_used=session_data.get("input_tokens_used", 0),
+            output_tokens_used=session_data.get("output_tokens_used", 0),
         )
 
     def get_messages(self, session_id: str) -> List[ChatMessage]:

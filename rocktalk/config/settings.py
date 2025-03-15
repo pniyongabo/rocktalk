@@ -229,8 +229,10 @@ class SettingsManager:
         if thinking_enabled and not model_supports_thinking(model_id):
             st.warning(
                 "⚠️ Extended thinking is only supported on Claude 3.7 models. "
-                f"The current model ({model_id}) does not support thinking capabilities."
+                f"The current model ({model_id}) does not support thinking capabilities. "
+                "Thinking has been automatically disabled."
             )
+            st.session_state.temp_llm_config.parameters.thinking.enabled = False
         elif thinking_enabled:
             st.info(
                 "ℹ️ Extended thinking is enabled. Temperature, top_p, and top_k settings "
@@ -573,7 +575,12 @@ class SettingsManager:
                 new_session = ChatSession(
                     title=st.session_state.temp_session_title,
                     config=config,
-                    total_tokens_used=st.session_state.get("temp_session_tokens", 0),
+                    input_tokens_used=st.session_state.get(
+                        "temp_session_input_tokens", 0
+                    ),
+                    output_tokens_used=st.session_state.get(
+                        "temp_session_output_tokens", 0
+                    ),
                 )
                 st.session_state.current_session_id = new_session.session_id
                 self.ctx.storage.store_session(new_session)
