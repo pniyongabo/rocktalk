@@ -260,7 +260,7 @@ class BedrockLLM(LLMInterface):
             top_p = None
             top_k = None
             logger.info(
-                f"Extended thinking enabled with budget of {self._config.parameters.thinking.budget_tokens:,} tokens"
+                f"Extended thinking enabled with thinking budget of {self._config.parameters.thinking.budget_tokens:,} tokens"
             )
         else:
             # Non-Claude 3.7 models don't support thinking
@@ -271,8 +271,9 @@ class BedrockLLM(LLMInterface):
                 additional_model_request_fields["top_k"] = top_k
             if self._config.parameters.thinking.enabled:
                 logger.warning(
-                    f"Extended thinking is only supported on Claude 3.7 models. Using model {self._config.bedrock_model_id} without thinking."
+                    f"Extended thinking is enabled, however model {self._config.bedrock_model_id} is not known to support it. Automatically disabling extended thinking now."
                 )
+                self._config.parameters.thinking.enabled = False
 
         creds = get_cached_aws_credentials()
         region_name = (
@@ -306,45 +307,6 @@ class BedrockLLM(LLMInterface):
                 additional_model_request_fields=additional_model_request_fields,
             )
         self._init_rate_limiter()  # Re-initialize rate limiter when config changes
-
-    # def _extract_token_usage(self, usage_data: UsageMetadata | None) -> Dict[str, int]:
-    #     """Extract token usage from Bedrock response metadata
-
-    #     Args:
-    #         usage_data: Usage metadata from Bedrock response
-
-    #     Returns:
-    #         Dictionary with token usage counts
-    #     """
-    #     # Initialize with zeros
-    #     result = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
-
-    #     if usage_data is None:
-    #         return result
-
-    #     # Check if data is nested (as shown in your example)
-    #     if isinstance(usage_data, dict):
-    #         # Sometimes the usage data may be directly accessible
-    #         if "input_tokens" in usage_data:
-    #             result["input_tokens"] = usage_data.get("input_tokens", 0)
-    #             result["output_tokens"] = usage_data.get("output_tokens", 0)
-    #             result["total_tokens"] = usage_data.get("total_tokens", 0)
-
-    #         # For Claude and other models that use different key structures
-    #         elif "promptTokenCount" in usage_data:
-    #             result["input_tokens"] = usage_data.get("promptTokenCount", 0)
-    #             result["output_tokens"] = usage_data.get("completionTokenCount", 0)
-    #             result["total_tokens"] = (
-    #                 result["input_tokens"] + result["output_tokens"]
-    #             )
-
-    #     # If total_tokens is still 0, calculate it from input and output
-    #     if result["total_tokens"] == 0 and (
-    #         result["input_tokens"] > 0 or result["output_tokens"] > 0
-    #     ):
-    #         result["total_tokens"] = result["input_tokens"] + result["output_tokens"]
-
-    #     return result
 
     def _estimate_tokens(self, messages: List[BaseMessage]) -> int:
         """Estimate the number of tokens for input messages.
@@ -544,205 +506,39 @@ class BedrockLLM(LLMInterface):
         except Exception as e:
             logger.warning(f"Failed to update session token counts: {e}")
 
-    def handle_usage_data(self, usage_data: UsageMetadata) -> None:
-        # Update rate limiter with total tokens
-        self._rate_limiter.update_usage(usage_data["input_tokens"])
+    def handle_usage_data(self, usage_data: UsageMetadata | None) -> None:
+        if usage_data:
+            # Update rate limiter with total tokens
+            self._rate_limiter.update_usage(usage_data["input_tokens"])
 
-        # Update session token tracking with separate input/output counts
-        self._update_session_tokens(
-            input_tokens=usage_data["input_tokens"],
-            output_tokens=usage_data["output_tokens"],
-            session_id=st.session_state.current_session_id,
-        )
-
-        # Log token usage details
-        session_type = (
-            "Temporary"
-            if st.session_state.get("temporary_session", False)
-            else "Session"
-        )
-        session_tokens = (
-            st.session_state.temp_session_tokens
-            if st.session_state.get("temporary_session", False)
-            else self.get_token_usage_stats().get("total_tokens", 0)
-        )
-
-        logger.info(
-            f"Request used {usage_data['total_tokens']:,} tokens "
-            f"({usage_data['input_tokens']:,} input, {usage_data['output_tokens']:,} output). "
-            f"{session_type} total: {session_tokens:,}. "
-            f"Rate usage: {self._rate_limiter.get_current_usage():,}/{self._rate_limiter.tokens_per_minute:,} tokens/min "
-            f"({self._rate_limiter.get_usage_percentage():.1f}%)"
-        )
-
-    def stream(self, input: List[BaseMessage]) -> Iterator[Dict[str, Any]]:
-        """Stream a response with rate limiting, processing thinking blocks internally.
-
-        This version yields simplified dictionaries for easy consumption by the UI:
-        {
-            "content": "text chunk",
-            "type": "thinking" | "text",
-            "is_thinking_block": bool,  # True if this is a thinking block
-            "done": bool,               # True for the last chunk
-            "metadata": {...}           # Optional metadata
-        }
-        """
-        # Estimate token usage for input
-        estimated_input_tokens = self._estimate_tokens(input)
-
-        # For thinking-enabled responses, we need a larger buffer
-        if (
-            model_supports_thinking(self._config.bedrock_model_id)
-            and self._config.parameters.thinking.enabled
-        ):
-            # Thinking can use up to budget_tokens plus regular response
-            estimated_total = (
-                estimated_input_tokens
-                + self._config.parameters.thinking.budget_tokens
-                + estimated_input_tokens
+            # Update session token tracking with separate input/output counts
+            self._update_session_tokens(
+                input_tokens=usage_data["input_tokens"],
+                output_tokens=usage_data["output_tokens"],
+                session_id=st.session_state.current_session_id,
             )
-        else:
-            # Regular response estimation
-            estimated_total = estimated_input_tokens * 2
 
-        # Check rate limit
-        is_allowed, wait_time = self._rate_limiter.check_rate_limit(estimated_total)
+            # Log token usage details
+            session_type = (
+                "Temporary"
+                if st.session_state.get("temporary_session", False)
+                else "Session"
+            )
+            session_tokens = (
+                st.session_state.temp_session_tokens
+                if st.session_state.get("temporary_session", False)
+                else self.get_token_usage_stats().get("total_tokens", 0)
+            )
 
-        if not is_allowed:
-            # Inform user about rate limiting
-            wait_time_rounded = round(wait_time, 1)
-            usage_percent = self._rate_limiter.get_usage_percentage()
-            message = f"Rate limit {self._rate_limiter.tokens_per_minute} tokens/min reached ({usage_percent:.1f}% used). Please wait {wait_time_rounded} seconds."
-            logger.warning(message)
-            st.warning(message)
-            with st.spinner("Waiting for..", show_time=True):
-                st.markdown("")
-                time.sleep(wait_time)
+            logger.info(
+                f"Request used {usage_data['total_tokens']:,} tokens "
+                f"({usage_data['input_tokens']:,} input, {usage_data['output_tokens']:,} output). "
+                f"{session_type} total: {session_tokens:,}. "
+                f"Rate usage: {self._rate_limiter.get_current_usage():,}/{self._rate_limiter.tokens_per_minute:,} tokens/min "
+                f"({self._rate_limiter.get_usage_percentage():.1f}%)"
+            )
 
-        # Track state
-        usage_data: UsageMetadata | None = None
-        current_thinking_block = ""
-        current_thinking_signature = None
-        current_text_block = ""
-        all_content_items: ChatContent = []
-
-        try:
-            # Process chunks from the LLM stream
-            for chunk in self._llm.stream(input=input):
-                chunk = cast(AIMessageChunk, chunk)
-                logger.info(f"Chunk received: {pprint.pformat(chunk)}")
-                # Extract usage data if available
-                if chunk.usage_metadata:
-                    usage_data = chunk.usage_metadata
-                    logger.info(f"Chunk usage_metadata: {pprint.pformat(usage_data)}")
-
-                # Process content
-                if isinstance(chunk.content, str):
-                    # Simple text chunk
-                    current_text_block += chunk.content
-                    yield {
-                        "content": chunk.content,
-                        "type": "text",
-                        "is_thinking_block": False,
-                        "done": False,
-                    }
-                elif isinstance(chunk.content, list):
-                    # Structured content
-                    for item in chunk.content:
-                        if isinstance(item, dict):
-                            if item.get("type") == "reasoning_content":
-                                # Accumulate thinking content
-                                thinking_chunk = item.get("reasoning_content", {}).get(
-                                    "text"
-                                )
-
-                                if thinking_chunk:
-                                    current_thinking_block += thinking_chunk
-
-                                if item.get("reasoning_content", {}).get("signature"):
-                                    current_thinking_signature = item.get(
-                                        "reasoning_content", {}
-                                    ).get("signature")
-
-                                yield {
-                                    "content": thinking_chunk,
-                                    "type": "thinking",
-                                    "is_thinking_block": True,
-                                    "done": False,
-                                }
-
-                            elif item.get("type") == "text":
-                                # Accumulate text content
-                                text = item.get("text", "")
-                                current_text_block += text
-                                yield {
-                                    "content": text,
-                                    "type": "text",
-                                    "is_thinking_block": False,
-                                    "done": False,
-                                }
-
-                # If we get an empty content or end marker, flush current blocks
-                if not chunk.content:
-                    # Add thinking block if we have accumulated content
-                    if current_thinking_block:
-                        all_content_items.append(
-                            ChatContentItem(
-                                thinking=current_thinking_block,
-                                thinking_signature=current_thinking_signature,
-                            )
-                        )
-                        current_thinking_block = ""
-
-                    # Add text block if we have accumulated content
-                    if current_text_block:
-                        all_content_items.append(
-                            ChatContentItem(text=current_text_block)
-                        )
-                        current_text_block = ""
-
-            # Send final completion chunk
-            yield {
-                "content": "",
-                "type": "text",
-                "is_thinking_block": False,
-                "done": True,
-                "metadata": {"usage_data": usage_data},
-            }
-
-            # After streaming completes, save the full message if not temporary
-            if all_content_items:
-                assistant_message = ChatMessage.create(
-                    role="assistant",
-                    content=all_content_items,
-                    index=len(st.session_state.messages),
-                    session_id=st.session_state.get("current_session_id", ""),
-                )
-
-                # logger.info("test")
-
-                logger.debug(
-                    f"Saving assistant message: {pprint.pformat(assistant_message)}"
-                )
-                logger.info(
-                    f"Saving assistant message: {pprint.pformat(assistant_message)}"
-                )
-
-                # Store in session state
-                st.session_state.messages.append(assistant_message)
-                if not st.session_state.get(
-                    "temporary_session", False
-                ) and st.session_state.get("current_session_id"):
-                    # Store in storage
-                    self._storage.save_message(assistant_message)
-
-        finally:
-            # After stream completes (or errors), extract and update token usage
-            if usage_data:
-                self.handle_usage_data(usage_data)
-
-    def invoke(self, input: list[BaseMessage]) -> AIMessage:
-        """Invoke the model with rate limiting"""
+    def pause_for_rate_limit(self, input: list[BaseMessage]):
         # Estimate token usage
         estimated_input_tokens = self._estimate_tokens(input)
 
@@ -775,28 +571,148 @@ class BedrockLLM(LLMInterface):
                 st.markdown("")
                 time.sleep(wait_time)
 
+    def stream(self, input: List[BaseMessage]) -> Iterator[Dict[str, Any]]:
+        """Stream a response with rate limiting, processing thinking blocks internally.
+
+        This version yields simplified dictionaries for easy consumption by the UI:
+        {
+            "content": "text chunk",
+            "type": "thinking" | "text",
+            "is_thinking_block": bool,  # True if this is a thinking block
+            "done": bool,               # True for the last chunk
+            "metadata": {...}           # Optional metadata
+        }
+        """
+
+        self.pause_for_rate_limit(input)
+
+        # Track state
+        usage_data: UsageMetadata | None = None
+        current_thinking_block = ""
+        current_thinking_signature: str | None = None
+        current_text_block = ""
+        all_content_items: ChatContent = []
+
+        try:
+            # Process chunks from the LLM stream
+            for chunk in self._llm.stream(input=input):
+                chunk = cast(AIMessageChunk, chunk)
+                logger.info(f"Chunk received: {pprint.pformat(chunk)}")
+                # Extract usage data if available
+                if chunk.usage_metadata:
+                    usage_data = chunk.usage_metadata
+
+                # Process content
+                if isinstance(chunk.content, str):
+                    # Simple text chunk
+                    current_text_block += chunk.content
+                    yield {
+                        "content": chunk.content,
+                        "type": "text",
+                        "is_thinking_block": False,
+                        "done": False,
+                    }
+                elif isinstance(chunk.content, list):
+                    # Structured content
+                    for item in chunk.content:
+                        if isinstance(item, dict):
+                            if item.get("type") == "reasoning_content":
+                                # Accumulate thinking content
+                                thinking_chunk = item.get("reasoning_content", {}).get(
+                                    "text"
+                                )
+
+                                if thinking_chunk:
+                                    current_thinking_block += thinking_chunk
+
+                                if item.get("reasoning_content", {}).get("signature"):
+                                    current_thinking_signature = item[
+                                        "reasoning_content"
+                                    ]["signature"]
+
+                                yield {
+                                    "content": thinking_chunk,
+                                    "type": "thinking",
+                                    "is_thinking_block": True,
+                                    "done": False,
+                                }
+
+                            elif item.get("type") == "text":
+                                # Accumulate text content
+                                text = item.get("text", "")
+                                current_text_block += text
+                                yield {
+                                    "content": text,
+                                    "type": "text",
+                                    "is_thinking_block": False,
+                                    "done": False,
+                                }
+
+            # Ensure we save accumulated content even if there were no empty chunks
+            # Add thinking block if we have accumulated content
+            if current_thinking_block:
+                all_content_items.append(
+                    ChatContentItem(
+                        thinking=current_thinking_block,
+                        thinking_signature=current_thinking_signature,
+                    )
+                )
+
+            # Add text block if we have accumulated content
+            if current_text_block:
+                all_content_items.append(ChatContentItem(text=current_text_block))
+            streaming_output = dict(
+                usage_data=usage_data,
+                current_thinking_block=current_thinking_block,
+                current_thinking_signature=current_thinking_signature,
+                current_text_block=current_text_block,
+                all_content_items=all_content_items,
+            )
+            logger.debug(f"Streaming complete: {streaming_output}")
+
+            # Send final completion chunk
+            yield {
+                "content": "",
+                "type": "text",
+                "is_thinking_block": False,
+                "done": True,
+                "metadata": {"usage_data": usage_data},
+            }
+
+            # After streaming completes, save the full message if not temporary
+            if all_content_items:
+                assistant_message = ChatMessage.create(
+                    role="assistant",
+                    content=all_content_items,
+                    index=len(st.session_state.messages),
+                    session_id=st.session_state.get("current_session_id", ""),
+                )
+
+                logger.info(
+                    f"Saving assistant message: {pprint.pformat(assistant_message)}"
+                )
+
+                # Store in session state
+                st.session_state.messages.append(assistant_message)
+                if not st.session_state.get(
+                    "temporary_session", False
+                ) and st.session_state.get("current_session_id"):
+                    # Store in storage
+                    self._storage.save_message(assistant_message)
+
+        finally:
+            # After stream completes (or errors), extract and update token usage
+            self.handle_usage_data(usage_data)
+
+    def invoke(self, input: list[BaseMessage]) -> AIMessage:
+        """Invoke the model with rate limiting"""
+        self.pause_for_rate_limit(input)
+
         # Get response
         response: AIMessage = cast(AIMessage, self._llm.invoke(input=input))
-        logger.debug(f"Response: {pprint.pformat(response)}")
         logger.info(f"Response: {pprint.pformat(response)}")
 
         # Extract token usage
-        usage_data = response.usage_metadata
-        if usage_data:
-            self.handle_usage_data(usage_data)
-
-        # # Process thinking blocks for logging
-        # has_thinking = False
-        # if (
-        #     hasattr(response, "content")
-        #     and isinstance(response.content, list)
-        #     and any(
-        #         isinstance(item, dict)
-        #         and item.get("type") in ["thinking", "redacted_thinking"]
-        #         for item in response.content
-        #     )
-        # ):
-        #     logger.debug("Received thinking block in response")
-        #     has_thinking = True
+        self.handle_usage_data(response.usage_metadata)
 
         return response

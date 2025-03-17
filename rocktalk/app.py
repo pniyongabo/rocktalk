@@ -2,7 +2,7 @@ import streamlit as st
 from app_context import AppContext
 from components import ChatInterface, Sidebar
 from streamlit_theme import st_theme
-from utils.js import get_user_timezone, load_js_init
+from utils.js import load_js_init
 from utils.log import logger
 
 st.set_page_config(
@@ -21,9 +21,6 @@ def initialize_app() -> AppContext:
 
     # Update theme (needs to happen on every run)
     st.session_state.theme = st_theme()
-
-    if "user_timezone" not in st.session_state or not st.session_state.user_timezone:
-        st.session_state.user_timezone = get_user_timezone()
 
     load_js_init()
 

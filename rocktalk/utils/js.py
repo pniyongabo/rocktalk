@@ -483,20 +483,3 @@ def adjust_chat_message_style():
             """,
         unsafe_allow_html=True,
     )
-
-
-def get_user_timezone() -> str | None:
-    """Get user timezone using streamlit_javascript"""
-    try:
-        # Direct call to get timezone using Intl API
-        timezone = st_javascript("Intl.DateTimeFormat().resolvedOptions().timeZone")
-
-        # Validate we got a string response
-        if isinstance(timezone, str) and timezone:
-            print(f"Detected timezone: {timezone} {type(timezone)}")
-            return timezone
-        else:
-            return None
-    except Exception as e:
-        logger.error(f"Failed to get timezone: {e}")
-        return None

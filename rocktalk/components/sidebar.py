@@ -38,9 +38,6 @@ class Sidebar(Component):
     def render(self) -> None:
         """Render the complete sidebar"""
         with st.sidebar:
-            self._handle_authentication_ui()
-
-            st.title("Chat Sessions")
             self.render_header()
             st.divider()
             self.render_session_list()
@@ -71,6 +68,13 @@ class Sidebar(Component):
 
     def render_header(self) -> None:
         """Render the header section with action buttons"""
+        self._handle_authentication_ui()
+        col1, col2 = st.columns((2, 1))
+        with col1:
+            st.title("Chat Sessions")
+        with col2:
+            self.render_current_template()
+
         header_key = "chat_sessions"
         with st.container(key=header_key):
             self.apply_header_styles(header_key)
@@ -117,6 +121,14 @@ class Sidebar(Component):
             ),
             label_visibility="collapsed",
         )
+
+    def render_current_template(self) -> None:
+        """Render the current template"""
+        template = SettingsManager.get_matching_template(
+            self.ctx.llm.get_config(), storage=self.ctx.storage
+        )
+        if template:
+            st.markdown(f":small[Current: **{template.name}**]")
 
     def render_session_list(self) -> None:
         """Render the list of chat sessions"""

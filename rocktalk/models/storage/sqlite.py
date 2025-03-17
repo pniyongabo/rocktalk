@@ -56,9 +56,15 @@ class SQLiteChatStorage(StorageInterface):
             current_version = 0 if row["version"] is None else row["version"]
             target_version = self.CURRENT_SCHEMA_VERSION
 
-            logger.info(
-                f"Current schema version: {current_version}, Target: {target_version}"
-            )
+            # update to mention whether migration eeded or not
+            if current_version == target_version:
+                logger.debug(
+                    f"SQLite database schema version: == target version ({target_version}). No migration needed."
+                )
+            else:
+                logger.info(
+                    f"SQLite database migration needed. Current schema version is: {current_version}; target version: {target_version}"
+                )
 
             # Run migrations sequentially from current to target version
             if current_version < 1 and target_version >= 1:

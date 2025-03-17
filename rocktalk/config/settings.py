@@ -134,8 +134,8 @@ class SettingsManager:
             st.session_state.original_config = (
                 st.session_state.temp_llm_config.model_copy(deep=True)
             )
-            matching_template = self._get_matching_template(
-                st.session_state.original_config
+            matching_template = self.get_matching_template(
+                config=st.session_state.original_config, storage=self.ctx.storage
             )
             st.session_state.original_template = (
                 matching_template.name if matching_template else CUSTOM_TEMPLATE_NAME
@@ -157,8 +157,8 @@ class SettingsManager:
 
         if st.button(apply_settings_text, type="primary", use_container_width=True):
             try:
-                current_template = self._get_matching_template(
-                    st.session_state.temp_llm_config
+                current_template = self.get_matching_template(
+                    config=st.session_state.temp_llm_config, storage=self.ctx.storage
                 )
                 if current_template:
                     if set_as_default:
@@ -267,7 +267,9 @@ class SettingsManager:
         show_refresh_app_control()
 
         # Save settings
-        current_template = self._get_matching_template(st.session_state.temp_llm_config)
+        current_template = self.get_matching_template(
+            config=st.session_state.temp_llm_config, storage=self.ctx.storage
+        )
 
         col1, col2, col3, col4 = st.columns(4)
 
@@ -743,9 +745,12 @@ class SettingsManager:
         else:
             st.markdown("*No changes to apply*")
 
-    def _get_matching_template(self, config: LLMConfig) -> Optional[ChatTemplate]:
+    @staticmethod
+    def get_matching_template(
+        config: LLMConfig, storage: StorageInterface
+    ) -> Optional[ChatTemplate]:
         """Find template matching the given config, if any"""
-        templates = self.ctx.storage.get_chat_templates()
+        templates = storage.get_chat_templates()
         for template in templates:
             if template.config == config:
                 return template
@@ -764,7 +769,9 @@ class SettingsManager:
 
         # Get currently selected template name from session state
         if current_selection is None:
-            matching_template = self._get_matching_template(current_config)
+            matching_template = self.get_matching_template(
+                config=current_config, storage=self.ctx.storage
+            )
             if matching_template:
                 current_selection = matching_template.name
             else:

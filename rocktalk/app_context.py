@@ -24,7 +24,6 @@ import yaml
 from models.llm import BedrockLLM, LLMInterface
 from models.storage.sqlite import SQLiteChatStorage
 from models.storage.storage_interface import StorageInterface
-from utils.js import get_user_timezone
 from utils.log import ROCKTALK_DIR, logger
 from yaml.loader import SafeLoader
 
