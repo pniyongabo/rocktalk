@@ -39,7 +39,7 @@ class UserInput(Component):
                     key="main_prompt",
                     placeholder="Hello!",
                     disabled=False,
-                    max_image_size=5 * 1024 * 1024,
+                    max_image_file_size=5 * 1024 * 1024,
                     default=st.session_state.user_input_default
                     or st.session_state.stored_user_input,
                     enable_clipboard_inspector=True,

@@ -524,11 +524,7 @@ class BedrockLLM(LLMInterface):
                 if st.session_state.get("temporary_session", False)
                 else "Session"
             )
-            session_tokens = (
-                st.session_state.temp_session_tokens
-                if st.session_state.get("temporary_session", False)
-                else self.get_token_usage_stats().get("total_tokens", 0)
-            )
+            session_tokens = self.get_token_usage_stats().get("total_tokens", 0)
 
             logger.info(
                 f"Request used {usage_data['total_tokens']:,} tokens "
@@ -597,7 +593,7 @@ class BedrockLLM(LLMInterface):
             # Process chunks from the LLM stream
             for chunk in self._llm.stream(input=input):
                 chunk = cast(AIMessageChunk, chunk)
-                logger.info(f"Chunk received: {pprint.pformat(chunk)}")
+                # logger.info(f"Chunk received: {pprint.pformat(chunk)}")
                 # Extract usage data if available
                 if chunk.usage_metadata:
                     usage_data = chunk.usage_metadata

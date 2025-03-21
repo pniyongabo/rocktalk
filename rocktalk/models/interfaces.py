@@ -8,7 +8,7 @@ import streamlit as st
 from langchain.schema import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from PIL.ImageFile import ImageFile
 from pydantic import BaseModel, Field, model_validator
-from streamlit_chat_prompt import ImageData, PromptReturn, prompt
+from streamlit_chat_prompt import FileData, PromptReturn, prompt
 from utils.image_utils import MAX_IMAGE_WIDTH, image_from_b64_image
 from utils.js import copy_value_to_clipboard, focus_prompt
 from utils.log import logger
@@ -425,7 +425,7 @@ class ChatMessage(BaseModel):
             PromptReturn object containing the message text and any images.
         """
         text = None
-        images: List[ImageData] = []
+        images: List[FileData] = []
 
         logger.debug(
             f"Prompt return raw data from streamlit-chat-prompt: {self.content}"
@@ -438,7 +438,7 @@ class ChatMessage(BaseModel):
                         text = item.text
                     elif item.image_data:
                         images.append(
-                            ImageData(
+                            FileData(
                                 format=item.metadata.get("format", "base64"),
                                 type=item.metadata.get("media_type", "image/jpeg"),
                                 data=item.image_data,
@@ -460,7 +460,7 @@ class ChatMessage(BaseModel):
         else:
             raise ValueError(f"Invalid content type: {type(self.content)}")
 
-        return PromptReturn(text=text, images=images if images else None)
+        return PromptReturn(text=text, files=images if images else None)
 
     def serialize_message_content(self) -> str:
         """Convert a list of ChatContentItem objects to a JSON string for storage."""
