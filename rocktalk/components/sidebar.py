@@ -276,11 +276,11 @@ class Sidebar(Component):
             unsafe_allow_html=True,
         )
         self.apply_session_list_styles(
-            container_key=header_key, width=37
+            container_key=header_key, width=29
         )  # approx 50 pix per new icon
 
     def apply_session_list_styles(
-        self, container_key="session_list", width: int = 200
+        self, container_key="session_list", width: int = 190
     ) -> None:
         """
         Apply CSS styles to the session list

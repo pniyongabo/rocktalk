@@ -18,6 +18,8 @@ def initialize_app() -> AppContext:
     if "app_context" not in st.session_state:
         logger.debug("Creating new AppContext")
         st.session_state.app_context = AppContext()
+        headers = {s: k for s, k in st.context.headers.items()}
+        logger.debug(f"User connection info: {headers}")
 
     # Update theme (needs to happen on every run)
     st.session_state.theme = st_theme()

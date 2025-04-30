@@ -25,7 +25,7 @@ class SearchOperator(StrEnum):
 class StorageInterface(ABC):
     """Protocol defining the interface for chat storage implementations"""
 
-    CURRENT_SCHEMA_VERSION = 2
+    CURRENT_SCHEMA_VERSION = 3
 
     @abstractmethod
     def save_message(self, message: ChatMessage) -> None:

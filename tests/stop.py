@@ -4,7 +4,7 @@ from typing import List
 
 import streamlit as st
 from PIL import Image
-from streamlit_chat_prompt import ImageData, PromptReturn, prompt
+from streamlit_chat_prompt import FileData, PromptReturn, prompt
 from streamlit_float import float_css_helper, float_init
 
 from rocktalk.models.interfaces import ChatMessage

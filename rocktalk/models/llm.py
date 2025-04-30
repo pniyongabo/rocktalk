@@ -115,6 +115,10 @@ class LLMInterface(ABC):
     def update_config(self, config: Optional[LLMConfig] = None) -> None: ...
     @abstractmethod
     def get_config(self) -> LLMConfig: ...
+    @abstractmethod
+    def is_thinking_supported(self) -> bool: ...
+    @abstractmethod
+    def is_image_supported(self) -> bool: ...
 
     def get_rate_limiter(self) -> Optional[TokenRateLimiter]:
         return None
@@ -242,14 +246,21 @@ class BedrockLLM(LLMInterface):
     def get_config(self) -> LLMConfig:
         return self._config
 
+    def is_thinking_supported(self) -> bool:
+        return (
+            model_supports_thinking(self._config.bedrock_model_id)
+            and self._config.parameters.thinking.enabled
+        )
+
+    def is_image_supported(self) -> bool:
+        # TODO list models where images are supported? expand to other types like documents, audio, etc.
+        return True
+
     def _update_llm(self) -> None:
         additional_model_request_fields: Dict[str, Any] = {}
 
         # Handle thinking parameters for Claude 3.7 Sonnet
-        if (
-            model_supports_thinking(self._config.bedrock_model_id)
-            and self._config.parameters.thinking.enabled
-        ):
+        if self.is_thinking_supported():
             # Add thinking parameters
             additional_model_request_fields["thinking"] = {
                 "type": "enabled",

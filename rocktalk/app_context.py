@@ -16,7 +16,7 @@ This approach combines proper encapsulation with Streamlit's stateful nature.
 """
 
 from pathlib import Path
-
+import time
 import dotenv
 import streamlit as st
 import streamlit_authenticator as stauth
@@ -25,6 +25,7 @@ from models.llm import BedrockLLM, LLMInterface
 from models.storage.sqlite import SQLiteChatStorage
 from models.storage.storage_interface import StorageInterface
 from utils.log import ROCKTALK_DIR, logger
+from utils.js import refresh_window
 from yaml.loader import SafeLoader
 
 
@@ -142,10 +143,20 @@ class AppContext:
                 elif st.session_state.get("authentication_status") is None:
                     st.warning("Please enter your username and password")
                 return False
+            else:
+                return True
         except Exception as e:
-            logger.error(f"Authentication error: {e}")
-            st.error(f"Authentication system error. Proceeding without authentication.")
-            # Allow access despite auth error
-            return True
+            st.error(f"Authentication error:\n\n{e}")
 
-        return True
+            if self._auth:
+                with st.spinner(
+                    "Auth cookie cleared for RockTalk, reloading in 5 seconds.."
+                ):
+                    cookie = self._auth.cookie_controller.delete_cookie()
+                    st.session_state.clear()
+                    time.sleep(5)
+                    refresh_window()
+                    time.sleep(1)
+                    st.error("Error reloading page, try manually?")
+
+            return False

@@ -250,7 +250,7 @@ class ChatMessage(BaseModel):
 
                     # Display thinking blocks first
                     if thinking_blocks:
-                        with st.expander("View reasoning process", expanded=True):
+                        with st.expander("View reasoning process", expanded=False):
                             for block in thinking_blocks:
                                 st.markdown(escape_dollarsign(block))
 
@@ -324,20 +324,26 @@ class ChatMessage(BaseModel):
                 if item.text:
                     content_list.append({"type": "text", "text": item.text})
                 elif item.thinking:
-                    content_list.append(
-                        {
-                            "type": "thinking",
-                            "thinking": item.thinking,
-                            "signature": item.thinking_signature,
-                        }
-                    )
+                    if (
+                        st.session_state.app_context.llm.is_thinking_supported()
+                    ):
+                        content_list.append(
+                            {
+                                "type": "thinking",
+                                "thinking": item.thinking,
+                                "signature": item.thinking_signature,
+                            }
+                        )
                 elif item.redacted_thinking:
-                    content_list.append(
-                        {
-                            "type": "redacted_thinking",
-                            "redacted_thinking": item.redacted_thinking,
-                        }
-                    )
+                    if (
+                        st.session_state.app_context.llm.is_thinking_supported()
+                    ):
+                        content_list.append(
+                            {
+                                "type": "redacted_thinking",
+                                "redacted_thinking": item.redacted_thinking,
+                            }
+                        )
                 elif item.image_data:
                     content_list.append(
                         {

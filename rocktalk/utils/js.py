@@ -483,3 +483,29 @@ def adjust_chat_message_style():
             """,
         unsafe_allow_html=True,
     )
+
+
+def refresh_window():
+    """Refreshes the parent window from within an iframe.
+
+    This function injects JavaScript code that refreshes the entire Streamlit app
+    by reloading the parent window.
+    """
+    js = """
+    <script>
+        function refreshParentWindow() {
+            try {
+                // Access the parent window and reload it
+                window.parent.location.reload();
+                console.log("Parent window refresh triggered");
+            } catch (error) {
+                console.error("Error refreshing parent window:", error);
+            }
+        }
+        
+        // Execute the refresh
+        refreshParentWindow();
+    </script>
+    """
+
+    stcomponents.html(js, height=0)

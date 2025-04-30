@@ -97,28 +97,6 @@ class SQLiteChatStorage(StorageInterface):
                 """
             )
 
-        # Check if input_tokens_used column exists
-        cursor = conn.execute(
-            """
-            SELECT name FROM pragma_table_info('sessions')
-            WHERE name='input_tokens_used'
-            """
-        )
-        if not cursor.fetchone():
-            logger.info("Adding input/output token columns to sessions table")
-            conn.execute(
-                """
-                ALTER TABLE sessions
-                ADD COLUMN input_tokens_used INTEGER NOT NULL DEFAULT 0
-                """
-            )
-            conn.execute(
-                """
-                ALTER TABLE sessions
-                ADD COLUMN output_tokens_used INTEGER NOT NULL DEFAULT 0
-                """
-            )
-
         # Update schema version
         conn.execute(
             """
@@ -127,9 +105,6 @@ class SQLiteChatStorage(StorageInterface):
             """,
             (format_datetime(datetime.now(timezone.utc)),),
         )
-
-    # Update CURRENT_SCHEMA_VERSION at the top of the class
-    CURRENT_SCHEMA_VERSION = 3
 
     def _migrate_to_v2(self, conn) -> None:
         """Migration for version 2: Message content format"""
@@ -224,78 +199,101 @@ class SQLiteChatStorage(StorageInterface):
         """Migration for version 3: Separate token tracking"""
         logger.info("Migrating database to schema version 3")
 
-        # Add new token columns
-        conn.execute(
-            """
-            ALTER TABLE sessions
-            ADD COLUMN input_tokens_used INTEGER NOT NULL DEFAULT 0
-            """
-        )
-        conn.execute(
-            """
-            ALTER TABLE sessions
-            ADD COLUMN output_tokens_used INTEGER NOT NULL DEFAULT 0
-            """
-        )
-
-        # Copy existing total_tokens_used to input_tokens_used
-        # We'll assume all existing tokens were input tokens to be conservative
-        conn.execute(
-            """
-            UPDATE sessions
-            SET input_tokens_used = total_tokens_used
-            WHERE total_tokens_used IS NOT NULL
-            """
-        )
-
-        # Drop the old column
-        # SQLite doesn't support DROP COLUMN before version 3.35.0
-        # So we need to do it the hard way by creating a new table
-        conn.execute(
-            """
-            CREATE TABLE sessions_new (
-                session_id TEXT PRIMARY KEY,
-                title TEXT NOT NULL,
-                created_at TIMESTAMP NOT NULL,
-                last_active TIMESTAMP NOT NULL,
-                config TEXT NOT NULL,
-                is_private BOOLEAN NOT NULL DEFAULT 0,
-                input_tokens_used INTEGER NOT NULL DEFAULT 0,
-                output_tokens_used INTEGER NOT NULL DEFAULT 0
+        try:
+            # First check if the sessions table has the target columns already
+            cursor = conn.execute(
+                """
+                SELECT 
+                    COUNT(*) as col_count 
+                FROM pragma_table_info('sessions') 
+                WHERE name IN ('input_tokens_used', 'output_tokens_used')
+                """
             )
-            """
-        )
-
-        # Copy data to new table
-        conn.execute(
-            """
-            INSERT INTO sessions_new
-            SELECT
-                session_id,
-                title,
-                created_at,
-                last_active,
-                config,
-                is_private,
-                input_tokens_used,
-                output_tokens_used
-            FROM sessions
-            """
-        )
-
-        # Drop old table and rename new one
-        conn.execute("DROP TABLE sessions")
-        conn.execute("ALTER TABLE sessions_new RENAME TO sessions")
-
-        # Update schema version
-        conn.execute(
-            """
-            INSERT INTO schema_version (version, applied_at)
-            VALUES (3, ?)
-            """,
-            (format_datetime(datetime.now(timezone.utc)),),
-        )
-
+            existing_columns = cursor.fetchone()["col_count"]
+            
+            # Check if total_tokens_used exists
+            cursor = conn.execute(
+                """
+                SELECT name FROM pragma_table_info('sessions')
+                WHERE name='total_tokens_used'
+                """
+            )
+            has_total_tokens = cursor.fetchone() is not None
+            
+            if existing_columns == 2 and not has_total_tokens:
+                # Migration already completed
+                logger.info("Token columns already exist in proper format, skipping v3 migration")
+            else:
+                # We need to rebuild the table
+                logger.info("Rebuilding sessions table with new token columns")
+                
+                # Create new table with correct schema
+                conn.execute(
+                    """
+                    CREATE TABLE sessions_new (
+                        session_id TEXT PRIMARY KEY,
+                        title TEXT NOT NULL,
+                        created_at TIMESTAMP NOT NULL,
+                        last_active TIMESTAMP NOT NULL,
+                        config TEXT NOT NULL,
+                        is_private BOOLEAN NOT NULL DEFAULT 0,
+                        input_tokens_used INTEGER NOT NULL DEFAULT 0,
+                        output_tokens_used INTEGER NOT NULL DEFAULT 0
+                    )
+                    """
+                )
+                
+                # If total_tokens_used exists, use it for input_tokens_used
+                if has_total_tokens:
+                    conn.execute(
+                        """
+                        INSERT INTO sessions_new
+                        SELECT
+                            session_id,
+                            title,
+                            created_at,
+                            last_active,
+                            config,
+                            COALESCE(is_private, 0),
+                            COALESCE(total_tokens_used, 0),
+                            0
+                        FROM sessions
+                        """
+                    )
+                else:
+                    # No total_tokens_used column, do a clean migration
+                    conn.execute(
+                        """
+                        INSERT INTO sessions_new
+                        SELECT
+                            session_id,
+                            title,
+                            created_at,
+                            last_active,
+                            config,
+                            COALESCE(is_private, 0),
+                            0,
+                            0
+                        FROM sessions
+                        """
+                    )
+                
+                # Replace old table with new one
+                conn.execute("DROP TABLE sessions")
+                conn.execute("ALTER TABLE sessions_new RENAME TO sessions")
+            
+            # Update schema version
+            conn.execute(
+                """
+                INSERT INTO schema_version (version, applied_at)
+                VALUES (3, ?)
+                """,
+                (format_datetime(datetime.now(timezone.utc)),),
+            )
+            
+        except Exception as e:
+            logger.error(f"Migration to v3 failed: {str(e)}")
+            raise e
     @contextmanager
     def get_connection(self):
         """Create a new connection with row factory for dict results"""

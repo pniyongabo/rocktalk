@@ -1,6 +1,6 @@
 [project]
 name = "rocktalk"
-version = "0.5.3"
+version = "0.6.0"
 description = "A private and locally running ChatBot WebApp with Streamlit, LangChain, and Amazon Bedrock"
 readme = "README.md"
 authors = [
@@ -36,7 +36,7 @@ classifiers = [
 ]
 dependencies = [
     "langchain>=0.3.4",
-    "langchain-aws>=0.2.17",
+    "langchain-aws>=0.2.21",
     "boto3>=1.35.44",
     "python-dotenv>=1.0.1",
     "pydantic>=2.9.2",
@@ -44,7 +44,7 @@ dependencies = [
     "streamlit==1.43.2",
     "streamlit-keywords>=0.1.12",
     "streamlit-authenticator>=0.4.1",
-    "streamlit-chat-prompt>=0.4.0",
+    "streamlit-chat-prompt>=0.4.1",
     "streamlit-js-eval>=0.1.7",
     "streamlit-javascript==0.1.5",
     "streamlit-shortcuts>=0.1.9",
