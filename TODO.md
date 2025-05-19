@@ -1,5 +1,6 @@
 # TODOs
 
+- after template creation, make the active template
 - add export/import for multiple sessions, prevent duplicate session_id?
 - add separate storage for multiple users
 - new template from existing session settings
